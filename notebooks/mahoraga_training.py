@@ -82,8 +82,34 @@ ACTION_NAMES = {
 }
 
 def build_prompt(state):
-    """Build instruction prompt from environment state."""
+    """Build instruction prompt from environment state.
+    Includes attack history for pattern detection and weakest resistance for adaptive play."""
     res = state["resistances"]
+    history = state.get("attack_history", [])
+
+    # Build attack history string
+    if len(history) >= 2:
+        history_str = " → ".join(history)
+    else:
+        history_str = "Not enough data yet"
+
+    # Detect if pattern exists (check for repeating cycle)
+    pattern_hint = ""
+    if len(history) >= 3:
+        # Check if last 3 attacks form a cycle that predicts next
+        if history[-3:] == ["PHYSICAL", "CE", "TECHNIQUE"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles PHYSICAL → CE → TECHNIQUE. Next attack is likely PHYSICAL."
+        elif history[-3:] == ["CE", "TECHNIQUE", "PHYSICAL"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles CE → TECHNIQUE → PHYSICAL. Next attack is likely CE."
+        elif history[-3:] == ["TECHNIQUE", "PHYSICAL", "CE"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles TECHNIQUE → PHYSICAL → CE. Next attack is likely TECHNIQUE."
+        elif history[-1] == history[-2] == history[-3]:
+            pattern_hint = f"\n⚡ PATTERN DETECTED: Enemy repeats {history[-1]} every turn. Adapt to {history[-1]}."
+
+    # Find weakest resistance
+    weakest_key = min(res, key=res.get)
+    weakest_name = weakest_key.upper()
+    weakest_val = res[weakest_key]
 
     prompt = f"""You are Mahoraga, an adaptive combat agent in a turn-based RL environment.
 
@@ -95,6 +121,12 @@ Current State:
 - Last Action Taken: {state['last_action']}
 - Turn: {state['turn_number']}
 
+Enemy Attack History (oldest → newest):
+  {history_str}{pattern_hint}
+
+⚠️ Weakest Resistance: {weakest_name} ({weakest_val})
+  → Adaptive enemies will likely target this.
+
 Available Actions:
 0 = Adapt Physical Resistance (+40 Physical, -20 others)
 1 = Adapt CE Resistance (+40 CE, -20 others)
@@ -102,11 +134,12 @@ Available Actions:
 3 = Judgment Strike (burst if you adapted to enemy's type, resets resistances)
 4 = Regeneration (heal 300 HP, 3-turn cooldown)
 
-WINNING STRATEGY:
-1. Adapt to enemy attack type 2 times to build resistance + stacks
-2. Use Judgment Strike for burst damage (350 + 50 per stack)
-3. Repeat: Adapt → Adapt → Strike
-4. Heal ONLY when HP is critically low
+STRATEGY GUIDE:
+1. If you detect a PATTERN in enemy attacks → predict next attack and adapt to it
+2. If no pattern is clear → adapt to your WEAKEST resistance (enemies target it)
+3. After adapting 2+ times → use Judgment Strike for burst damage
+4. Cycle: Adapt → Adapt → Strike
+5. Heal ONLY when HP is critically low (<300)
 
 Choose the best action. Return ONLY a single integer (0-4)."""
 
@@ -217,74 +250,96 @@ env_rollout = MahoragaEnv()
 trajectory, total_reward, ep_stats = run_episode(model, tokenizer, env_rollout)
 print(f"\nCollected {len(trajectory)} steps, total reward: {total_reward:.2f}")
 
-# %% CELL 9 — Expert trajectory seeding
-def generate_expert_trajectories(num_episodes=10):
-    """Generate optimal adapt→adapt→strike trajectories.
-    These seed the dataset with winning behavior."""
+# %% CELL 9 — Expert trajectory seeding (multi-enemy)
+from env.enemy import DifficultyEnemy
+
+def generate_expert_trajectories(num_per_type=4):
+    """Generate optimal trajectories against each enemy type.
+    Curriculum: adapt to phase patterns
+    Easy: always adapt PHYSICAL
+    Medium/Hard: adapt to last enemy attack (reactive strategy)"""
     expert_trajs = []
+    TYPE_MAP = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}
+    TYPE_MAP_LOWER = {"physical": 0, "ce": 1, "technique": 2}
 
-    for _ in range(num_episodes):
-        env = MahoragaEnv()
-        state = env.reset()
-        traj = []
-        total_reward = 0.0
-        attack_count = 0
+    enemy_configs = [
+        ("curriculum", None),
+        ("easy", DifficultyEnemy("easy")),
+        ("medium", DifficultyEnemy("medium")),
+        ("hard", DifficultyEnemy("hard")),
+    ]
 
-        for turn in range(25):
-            # Smart strategy: adapt to enemy type 2x, then Judgment Strike
-            cycle_pos = turn % 3
+    for enemy_name, enemy_obj in enemy_configs:
+        for _ in range(num_per_type):
+            env = MahoragaEnv(enemy=enemy_obj) if enemy_obj else MahoragaEnv()
+            state = env.reset()
+            traj = []
+            total_reward = 0.0
+            attack_count = 0
+            cycle = 0
 
-            if cycle_pos < 2:
-                # Adapt to PHYSICAL (Phase 1 enemy is always PHYSICAL)
-                if turn < 5:
-                    action = 0  # Phase 1: always PHYSICAL
-                elif turn < 15:
-                    # Phase 2: cycle — predict next type
-                    phase2_cycle = ["PHYSICAL", "CE", "TECHNIQUE"]
-                    phase2_pos = (turn - 5) % 3
-                    predicted = phase2_cycle[phase2_pos]
-                    action = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}[predicted]
+            for turn in range(25):
+                if cycle < 2:
+                    if enemy_name == "curriculum":
+                        # Phase-aware adaptation
+                        if turn < 5:
+                            action = 0
+                        elif turn < 15:
+                            phase2_cycle = ["PHYSICAL", "CE", "TECHNIQUE"]
+                            predicted = phase2_cycle[(turn - 5) % 3]
+                            action = TYPE_MAP[predicted]
+                        else:
+                            res = state["resistances"]
+                            weakest = min(res, key=res.get)
+                            action = TYPE_MAP_LOWER[weakest]
+                    elif enemy_name == "easy":
+                        action = 0  # Always PHYSICAL
+                    else:
+                        # Medium/Hard: adapt to last enemy attack (reactive)
+                        last_atk = state.get("last_enemy_attack_type", "PHYSICAL")
+                        action = TYPE_MAP.get(last_atk, 0)
+                    cycle += 1
                 else:
-                    # Phase 3: adapt to weakest (which enemy targets)
-                    res = state["resistances"]
-                    weakest = min(res, key=res.get)
-                    action = {"physical": 0, "ce": 1, "technique": 2}[weakest]
-            else:
-                action = 3  # Judgment Strike!
-                attack_count += 1
+                    action = 3  # Judgment Strike
+                    attack_count += 1
+                    cycle = 0
 
-            # Check if we should heal instead
-            if state["agent_hp"] < 300 and env.heal_cooldown_counter == 0 and cycle_pos != 2:
-                action = 4
+                # Emergency heal
+                if state["agent_hp"] < 300 and env.heal_cooldown_counter == 0 and cycle != 0:
+                    action = 4
+                    cycle = 0
 
-            prompt = build_prompt(state)
-            next_state, reward, done, info = env.step(action)
+                prompt = build_prompt(state)
+                next_state, reward, done, info = env.step(action)
 
-            traj.append({
-                "prompt": prompt,
-                "response": str(action),
-                "action": action,
-                "reward": reward,
-                "state": state,
-                "info": info
-            })
+                traj.append({
+                    "prompt": prompt,
+                    "response": str(action),
+                    "action": action,
+                    "reward": reward,
+                    "state": state,
+                    "info": info
+                })
 
-            total_reward += reward
-            state = next_state
-            if done:
-                break
+                total_reward += reward
+                state = next_state
+                if done:
+                    break
 
-        won = state["agent_hp"] > state["enemy_hp"]
-        expert_trajs.append((traj, total_reward, won, attack_count))
+            won = state["agent_hp"] > state["enemy_hp"]
+            expert_trajs.append((traj, total_reward, won, enemy_name))
 
     wins = sum(1 for _, _, w, _ in expert_trajs)
-    avg_r = sum(r for _, r, _, _ in expert_trajs) / len(expert_trajs)
-    print(f"Expert trajectories: {num_episodes} episodes, "
-          f"win rate={wins/num_episodes:.0%}, avg reward={avg_r:.2f}")
+    total = len(expert_trajs)
+    avg_r = sum(r for _, r, _, _ in expert_trajs) / total
+    for ename in ["curriculum", "easy", "medium", "hard"]:
+        w = sum(1 for _, _, won, n in expert_trajs if n == ename and won)
+        print(f"  Expert [{ename:10s}]: {w}/{num_per_type} wins")
+    print(f"  Total: {wins}/{total} wins, avg reward={avg_r:.2f}")
     return [t for t, _, _, _ in expert_trajs]
 
 
-expert_trajs = generate_expert_trajectories(10)
+expert_trajs = generate_expert_trajectories(4)
 
 # %% CELL 10 — Episode-aware dataset builder
 from datasets import Dataset
@@ -418,7 +473,19 @@ for iteration in range(NUM_ITERATIONS):
     iter_attack_counts = []
 
     for ep in range(EPISODES_PER_ITER):
-        env_train = MahoragaEnv()
+        # Mixed enemy training: expose model to diverse attack patterns
+        # 40% curriculum, 20% easy, 20% medium, 20% hard
+        import random
+        enemy_roll = random.random()
+        if enemy_roll < 0.4:
+            env_train = MahoragaEnv()  # CurriculumEnemy (default)
+        elif enemy_roll < 0.6:
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("easy"))
+        elif enemy_roll < 0.8:
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("medium"))
+        else:
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("hard"))
+
         traj, ep_reward, ep_stats = run_episode(model, tokenizer, env_train, verbose=False)
         all_trajectories.append(traj)
         iter_rewards.append(ep_reward)

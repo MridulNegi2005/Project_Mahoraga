@@ -30,6 +30,7 @@ class MahoragaEnv:
         self.last_enemy_subtype = None
         self.turn_number = 0
         self.heal_cooldown_counter = 0
+        self.attack_history = []
         self.enemy = self._enemy_factory()
         return self._get_state()
 
@@ -41,7 +42,8 @@ class MahoragaEnv:
             self.last_enemy_attack_type,
             self.last_enemy_subtype,
             self.last_action,
-            self.turn_number
+            self.turn_number,
+            attack_history=list(self.attack_history)
         )
 
     def step(self, action):
@@ -71,6 +73,11 @@ class MahoragaEnv:
         self.agent_hp = max(0, self.agent_hp - enemy_damage)
         self.last_enemy_attack_type = category
         self.last_enemy_subtype = subtype
+
+        # Track attack history (last 4 attacks, oldest first)
+        self.attack_history.append(category)
+        if len(self.attack_history) > 4:
+            self.attack_history.pop(0)
 
         # Check early death from enemy attack
         if self.agent_hp <= 0:
