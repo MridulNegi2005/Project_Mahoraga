@@ -1,7 +1,8 @@
 from utils.constants import (
     RESISTANCE_MIN, RESISTANCE_MAX, ADAPT_INCREASE, ADAPT_DECREASE,
     BASE_DAMAGE, JUDGMENT_BASE_DAMAGE, JUDGMENT_BURST_DAMAGE,
-    BURST_THRESHOLD, HEAL_AMOUNT, MAX_HP, ACTION_TO_TYPE
+    BURST_THRESHOLD, HEAL_AMOUNT, MAX_HP, ACTION_TO_TYPE,
+    PIERCE_RESISTANCE_BYPASS
 )
 
 
@@ -21,10 +22,16 @@ def apply_resistance_change(resistances, target_type):
     return updated
 
 
-def compute_enemy_damage(attack_type, resistances):
-    """Compute damage dealt by enemy to agent based on resistance."""
+def compute_enemy_damage(attack_type, resistances, subtype=None):
+    """Compute damage dealt by enemy to agent based on resistance.
+    PIERCE subtype ignores 20% of resistance."""
     base = BASE_DAMAGE[attack_type]
     resistance = resistances[attack_type]
+
+    # PIERCE bypasses 20% of resistance
+    if subtype == "PIERCE":
+        resistance = resistance * (1 - PIERCE_RESISTANCE_BYPASS)
+
     damage = base * (1 - resistance / 100.0)
     return int(damage)
 

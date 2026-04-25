@@ -41,3 +41,14 @@ ACTION_TO_TYPE = {
     1: "CE",
     2: "TECHNIQUE"
 }
+
+# === Subtypes ===
+SUBTYPES = {
+    "PHYSICAL": ["SLASH", "IMPACT", "PIERCE"],
+    "CE": ["BLAST", "WAVE", "BEAM"],
+    "TECHNIQUE": ["SPIKE", "DELAYED", "PATTERN"]
+}
+
+# === Subtype Effects ===
+PIERCE_RESISTANCE_BYPASS = 0.2  # PIERCE ignores 20% resistance
+

@@ -53,8 +53,10 @@ class MahoragaEnv:
             action = None  # Nullify action — agent wastes turn
 
         # 1. Enemy attacks first
-        attack_type, subtype = self.enemy.get_attack()
-        enemy_damage = compute_enemy_damage(attack_type, self.resistances)
+        attack = self.enemy.get_attack()
+        attack_type = attack["type"]
+        subtype = attack["subtype"]
+        enemy_damage = compute_enemy_damage(attack_type, self.resistances, subtype=subtype)
         self.agent_hp = max(0, self.agent_hp - enemy_damage)
         self.last_enemy_attack_type = attack_type
         self.last_enemy_subtype = subtype

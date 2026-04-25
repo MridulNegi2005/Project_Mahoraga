@@ -7,6 +7,8 @@ from env.mechanics import (
     new_resistances, apply_resistance_change, compute_enemy_damage,
     compute_judgment_damage
 )
+from env.enemy import Enemy, PatternEnemy
+from utils.constants import SUBTYPES, ATTACK_TYPES
 
 PASS = 0
 FAIL = 0
@@ -251,11 +253,114 @@ def test_info_dict_fields():
     check("damage_dealt = 0 for adapt action", info["damage_dealt"] == 0)
 
 
+# ========== PHASE 2 TESTS ==========
+
+def test_subtype_mapping():
+    print("\n--- Test: Subtype Mapping ---")
+    for attack_type in ATTACK_TYPES:
+        check(f"{attack_type} has subtypes", attack_type in SUBTYPES)
+        check(f"{attack_type} has 3 subtypes", len(SUBTYPES[attack_type]) == 3)
+
+    # Verify specific subtypes
+    check("PHYSICAL has PIERCE", "PIERCE" in SUBTYPES["PHYSICAL"])
+    check("CE has BEAM", "BEAM" in SUBTYPES["CE"])
+    check("TECHNIQUE has DELAYED", "DELAYED" in SUBTYPES["TECHNIQUE"])
+
+
+def test_pierce_bypass():
+    print("\n--- Test: PIERCE Bypass ---")
+    res = new_resistances()
+    res["PHYSICAL"] = 50
+
+    # Normal subtype
+    normal_dmg = compute_enemy_damage("PHYSICAL", res, subtype="SLASH")
+    # PIERCE bypasses 20% resistance: effective = 50 * 0.8 = 40
+    pierce_dmg = compute_enemy_damage("PHYSICAL", res, subtype="PIERCE")
+
+    check("PIERCE does more damage than SLASH at 50 res", pierce_dmg > normal_dmg)
+    # Normal: 120 * (1 - 50/100) = 60
+    check("Normal SLASH damage = 60", normal_dmg == 60)
+    # Pierce: 120 * (1 - 40/100) = 72
+    check("PIERCE damage = 72 (20% bypass)", pierce_dmg == 72)
+
+    # At 0 resistance, PIERCE should be same as normal
+    res_zero = new_resistances()
+    normal_zero = compute_enemy_damage("PHYSICAL", res_zero, subtype="SLASH")
+    pierce_zero = compute_enemy_damage("PHYSICAL", res_zero, subtype="PIERCE")
+    check("PIERCE same as normal at 0 resistance", normal_zero == pierce_zero)
+
+
+def test_pattern_enemy_cycle():
+    print("\n--- Test: Pattern Enemy Cycle ---")
+    enemy = PatternEnemy()
+    enemy.deviation_chance = 0  # Disable randomness for deterministic test
+
+    attack1 = enemy.get_attack()
+    check("Pattern step 1 = PHYSICAL", attack1["type"] == "PHYSICAL")
+    attack2 = enemy.get_attack()
+    check("Pattern step 2 = CE", attack2["type"] == "CE")
+    attack3 = enemy.get_attack()
+    check("Pattern step 3 = TECHNIQUE", attack3["type"] == "TECHNIQUE")
+    attack4 = enemy.get_attack()
+    check("Pattern step 4 = PHYSICAL (cycle)", attack4["type"] == "PHYSICAL")
+
+    # Verify dict format
+    check("Attack has 'type' key", "type" in attack1)
+    check("Attack has 'subtype' key", "subtype" in attack1)
+    check("Attack has 'base_damage' key", "base_damage" in attack1)
+    check("Subtype is valid for type", attack1["subtype"] in SUBTYPES[attack1["type"]])
+
+
+def test_pattern_enemy_randomness():
+    print("\n--- Test: Pattern Enemy Randomness ---")
+    enemy = PatternEnemy()
+    enemy.deviation_chance = 1.0  # Force full randomness
+
+    # Run many attacks, should see variety
+    types_seen = set()
+    for _ in range(50):
+        attack = enemy.get_attack()
+        types_seen.add(attack["type"])
+        # Verify subtype always valid for its type
+        check_valid = attack["subtype"] in SUBTYPES[attack["type"]]
+        if not check_valid:
+            check(f"Subtype {attack['subtype']} valid for {attack['type']}", False)
+            return
+
+    check("Random mode produces multiple attack types", len(types_seen) > 1)
+
+
+def test_enemy_dict_format():
+    print("\n--- Test: Enemy Dict Format ---")
+    enemy = Enemy()
+    attack = enemy.get_attack()
+    check("Phase 1 enemy returns dict", isinstance(attack, dict))
+    check("Dict has 'type'", "type" in attack)
+    check("Dict has 'subtype'", "subtype" in attack)
+    check("Dict has 'base_damage'", "base_damage" in attack)
+    check("Phase 1 type is PHYSICAL", attack["type"] == "PHYSICAL")
+    check("Phase 1 subtype is valid", attack["subtype"] in SUBTYPES["PHYSICAL"])
+
+
+def test_rl_observation_uses_3_types_only():
+    print("\n--- Test: RL Observation Uses Only 3 Types ---")
+    env = MahoragaEnv()
+    env.reset()
+    state, _, _, _ = env.step(0)
+
+    # Observation should only expose top-level types
+    check("last_enemy_attack_type is a valid RL type",
+          state["last_enemy_attack_type"] in ATTACK_TYPES)
+    check("Resistances use 3 keys only",
+          set(state["resistances"].keys()) == {"physical", "ce", "technique"})
+
+
 if __name__ == "__main__":
     print("=" * 50)
-    print("  MahoragaEnv Phase 1 Tests (Patched)")
+    print("  MahoragaEnv Phase 1+2 Tests")
     print("=" * 50)
 
+    # Phase 1 tests
     test_resistance_update()
     test_clamp_logic()
     test_damage_formula()
@@ -268,6 +373,14 @@ if __name__ == "__main__":
     test_heal_preserves_resistances()
     test_judgment_burst_only_matching()
     test_info_dict_fields()
+
+    # Phase 2 tests
+    test_subtype_mapping()
+    test_pierce_bypass()
+    test_pattern_enemy_cycle()
+    test_pattern_enemy_randomness()
+    test_enemy_dict_format()
+    test_rl_observation_uses_3_types_only()
 
     print("\n" + "=" * 50)
     print(f"  Results: {PASS} passed, {FAIL} failed")
