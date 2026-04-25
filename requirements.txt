@@ -2,9 +2,6 @@
 numpy
 gymnasium
 
-# UI (Gradio dashboard)
-gradio>=4.0
-
 # API (FastAPI backend)
 fastapi
 uvicorn[standard]

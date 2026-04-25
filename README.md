@@ -24,13 +24,6 @@ npm run dev
 # → Dashboard on http://localhost:5173
 ```
 
-### Gradio UI (Lightweight Alternative)
-
-```bash
-python app.py
-# → Gradio on http://localhost:7860
-```
-
 ---
 
 ## 🎮 Features
@@ -72,7 +65,6 @@ Click **▶ LLM AUTO** to let the trained Qwen 2.5 3B model fight autonomously:
 ```
 meta_Mahoraga/
 ├── api.py                  # FastAPI server (REST + LLM auto-play)
-├── app.py                  # Gradio dashboard (standalone)
 ├── main.py                 # CLI: run a single episode
 │
 ├── env/                    # Core RL environment
@@ -172,7 +164,6 @@ fastapi uvicorn pydantic         # API server
 torch transformers peft          # LLM inference
 bitsandbytes accelerate          # 4-bit quantization
 unsloth                          # Optional: faster inference
-gradio                           # Alternative UI
 ```
 
 ### Frontend
