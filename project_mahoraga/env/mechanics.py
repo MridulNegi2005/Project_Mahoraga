@@ -29,15 +29,14 @@ def compute_enemy_damage(attack_type, resistances):
     return int(damage)
 
 
-def compute_judgment_damage(resistances):
-    """Compute Judgment Strike damage. Burst if any resistance > 60."""
-    for r_type in resistances:
-        if resistances[r_type] > BURST_THRESHOLD:
-            return JUDGMENT_BURST_DAMAGE
+def compute_judgment_damage(resistances, enemy_attack_type=None):
+    """Compute Judgment Strike damage. Burst only if resistance of current enemy attack type > 60."""
+    if enemy_attack_type and resistances.get(enemy_attack_type, 0) > BURST_THRESHOLD:
+        return JUDGMENT_BURST_DAMAGE
     return JUDGMENT_BASE_DAMAGE
 
 
-def apply_action_effects(action, agent_hp, enemy_hp, resistances, adaptation_stack):
+def apply_action_effects(action, agent_hp, enemy_hp, resistances, adaptation_stack, enemy_attack_type=None):
     """
     Apply the agent's chosen action.
     Returns: (agent_hp, enemy_hp, resistances, adaptation_stack)
@@ -49,7 +48,7 @@ def apply_action_effects(action, agent_hp, enemy_hp, resistances, adaptation_sta
 
     elif action == 3:
         # Judgment Strike
-        damage = compute_judgment_damage(resistances)
+        damage = compute_judgment_damage(resistances, enemy_attack_type)
         # Stack bonus: each stack adds extra damage
         total_damage = damage + (adaptation_stack * 50)
         enemy_hp = max(0, enemy_hp - total_damage)
@@ -57,9 +56,8 @@ def apply_action_effects(action, agent_hp, enemy_hp, resistances, adaptation_sta
         adaptation_stack = 0
 
     elif action == 4:
-        # Regeneration
+        # Regeneration (does NOT reset resistances)
         agent_hp = min(MAX_HP, agent_hp + HEAL_AMOUNT)
-        resistances = new_resistances()
 
     return agent_hp, enemy_hp, resistances, adaptation_stack
 

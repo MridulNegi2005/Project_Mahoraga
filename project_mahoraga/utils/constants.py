@@ -1,5 +1,5 @@
 # === HP ===
-MAX_HP = 1000
+MAX_HP = 1200
 MAX_TURNS = 25
 
 # === Attack Types (RL Level) ===
@@ -25,6 +25,7 @@ JUDGMENT_BURST_DAMAGE = 350
 
 # === Regeneration ===
 HEAL_AMOUNT = 300
+HEAL_COOLDOWN = 3
 
 # === Action Mapping ===
 ACTION_ADAPT_PHYSICAL = 0

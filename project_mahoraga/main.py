@@ -38,6 +38,10 @@ def main():
         print(f"  Enemy HP:  {enemy_hp_before} -> {state['enemy_hp']}")
         print(f"  Resistances: {state['resistances']}")
         print(f"  Adaptation Stack: {env.adaptation_stack}")
+        print(f"  Correct Adaptation: {'YES' if info.get('correct_adaptation') else 'NO'}")
+        print(f"  Heal Cooldown: {env.heal_cooldown_counter} turns")
+        if info.get("heal_on_cooldown"):
+            print(f"  ** HEAL BLOCKED (on cooldown) **")
 
         if done:
             print("\n" + "=" * 60)

@@ -4,7 +4,7 @@ from env.mechanics import (
     new_resistances, apply_action_effects, compute_enemy_damage,
     check_correct_adaptation
 )
-from utils.constants import MAX_HP, MAX_TURNS
+from utils.constants import MAX_HP, MAX_TURNS, HEAL_COOLDOWN
 from utils.validators import validate_action
 
 
@@ -24,6 +24,7 @@ class MahoragaEnv:
         self.last_enemy_attack_type = None
         self.last_enemy_subtype = None
         self.turn_number = 0
+        self.heal_cooldown_counter = 0
         return self._get_state()
 
     def _get_state(self):
@@ -41,6 +42,16 @@ class MahoragaEnv:
         validate_action(action)
         self.turn_number += 1
 
+        # Decrement heal cooldown at start of turn
+        if self.heal_cooldown_counter > 0:
+            self.heal_cooldown_counter -= 1
+
+        # Check heal cooldown — if on cooldown, safely ignore and flag
+        heal_on_cooldown = False
+        if action == 4 and self.heal_cooldown_counter > 0:
+            heal_on_cooldown = True
+            action = None  # Nullify action — agent wastes turn
+
         # 1. Enemy attacks first
         attack_type, subtype = self.enemy.get_attack()
         enemy_damage = compute_enemy_damage(attack_type, self.resistances)
@@ -51,25 +62,51 @@ class MahoragaEnv:
         # Check early death from enemy attack
         if self.agent_hp <= 0:
             self.last_action = action
-            return self._get_state(), 0.0, True, {"reason": "Agent defeated"}
+            info = {
+                "reason": "Agent defeated",
+                "damage_taken": enemy_damage,
+                "damage_dealt": 0,
+                "correct_adaptation": False,
+                "adaptation_stack": self.adaptation_stack,
+                "heal_on_cooldown": heal_on_cooldown
+            }
+            return self._get_state(), 0.0, True, info
 
         # 2. Mahoraga observes and takes action
-        # Check if adaptation is correct (before applying action)
-        if check_correct_adaptation(action, attack_type):
-            self.adaptation_stack += 1
+        correct_adaptation = False
+        if action is not None:
+            correct_adaptation = check_correct_adaptation(action, attack_type)
+            if correct_adaptation:
+                self.adaptation_stack += 1
 
         # 3. Apply agent action effects
-        self.agent_hp, self.enemy_hp, self.resistances, self.adaptation_stack = (
-            apply_action_effects(
-                action, self.agent_hp, self.enemy_hp,
-                self.resistances, self.adaptation_stack
+        damage_dealt = 0
+        if action is not None:
+            enemy_hp_before = self.enemy_hp
+            self.agent_hp, self.enemy_hp, self.resistances, self.adaptation_stack = (
+                apply_action_effects(
+                    action, self.agent_hp, self.enemy_hp,
+                    self.resistances, self.adaptation_stack,
+                    enemy_attack_type=attack_type
+                )
             )
-        )
+            damage_dealt = max(0, enemy_hp_before - self.enemy_hp)
+
+            # Set heal cooldown if heal was used
+            if action == 4:
+                self.heal_cooldown_counter = HEAL_COOLDOWN
+
         self.last_action = action
 
         # 4. Check termination
         done = False
-        info = {}
+        info = {
+            "damage_taken": enemy_damage,
+            "damage_dealt": damage_dealt,
+            "correct_adaptation": correct_adaptation,
+            "adaptation_stack": self.adaptation_stack,
+            "heal_on_cooldown": heal_on_cooldown
+        }
 
         if self.enemy_hp <= 0:
             done = True
