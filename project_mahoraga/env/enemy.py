@@ -1,49 +1,65 @@
 import random
-from utils.constants import SUBTYPES, ATTACK_TYPES
+import utils.constants as const
+from utils.constants import (
+    SUBTYPES, ATTACK_TYPES, BASE_DAMAGE,
+    PHASE_1_END, PHASE_2_END
+)
 
 
-class Enemy:
-    """Phase 1 enemy: always attacks with PHYSICAL, random subtype."""
+class CurriculumEnemy:
+    """3-phase curriculum enemy for RL training.
 
-    def __init__(self):
-        self.phase = 1
-
-    def get_attack(self):
-        """Returns dict: {type, subtype, base_damage}."""
-        from utils.constants import BASE_DAMAGE
-        attack_type = "PHYSICAL"
-        subtype = random.choice(SUBTYPES[attack_type])
-        return {
-            "type": attack_type,
-            "subtype": subtype,
-            "base_damage": BASE_DAMAGE[attack_type]
-        }
-
-
-class PatternEnemy:
-    """Phase 2 enemy: cycles PHYSICAL -> CE -> TECHNIQUE with random subtypes.
-    10-15% chance of picking a random type instead of the pattern."""
+    Phase 1 (turns 1-5):   Always PHYSICAL
+    Phase 2 (turns 6-15):  Cycle PHYSICAL -> CE -> TECHNIQUE, 15% random injection
+    Phase 3 (turns 16-25): Target lowest resistance category
+    """
 
     def __init__(self):
-        self.phase = 2
+        self.turn = 0
         self.pattern = ["PHYSICAL", "CE", "TECHNIQUE"]
         self.pattern_index = 0
-        self.deviation_chance = 0.12  # ~12% randomness
 
-    def get_attack(self):
-        """Returns dict: {type, subtype, base_damage}."""
-        from utils.constants import BASE_DAMAGE
+    def get_attack(self, turn_number=None, resistances=None):
+        """Returns dict: {category, subtype, damage, ignore_armor}.
 
-        # Occasional random deviation
-        if random.random() < self.deviation_chance:
-            attack_type = random.choice(ATTACK_TYPES)
+        Args:
+            turn_number: Current turn (1-indexed). Uses internal counter if None.
+            resistances: Dict of {PHYSICAL, CE, TECHNIQUE} values for Phase 3.
+        """
+        if turn_number is not None:
+            self.turn = turn_number
         else:
-            attack_type = self.pattern[self.pattern_index]
-            self.pattern_index = (self.pattern_index + 1) % len(self.pattern)
+            self.turn += 1
 
-        subtype = random.choice(SUBTYPES[attack_type])
+        category = self._select_category(resistances)
+        subtype = random.choice(SUBTYPES[category])
+        ignore_armor = (subtype == "PIERCE")
+
         return {
-            "type": attack_type,
+            "category": category,
             "subtype": subtype,
-            "base_damage": BASE_DAMAGE[attack_type]
+            "damage": BASE_DAMAGE[category],
+            "ignore_armor": ignore_armor
         }
+
+    def _select_category(self, resistances=None):
+        """Select attack category based on current phase."""
+        if self.turn <= PHASE_1_END:
+            # Phase 1: Always PHYSICAL
+            return "PHYSICAL"
+
+        elif self.turn <= PHASE_2_END:
+            # Phase 2: Cycle with random injection
+            if random.random() < const.PHASE_2_DEVIATION:
+                return random.choice(ATTACK_TYPES)
+            else:
+                category = self.pattern[self.pattern_index]
+                self.pattern_index = (self.pattern_index + 1) % len(self.pattern)
+                return category
+
+        else:
+            # Phase 3: Target lowest resistance
+            if resistances is None:
+                return random.choice(ATTACK_TYPES)
+            lowest = min(resistances, key=resistances.get)
+            return lowest

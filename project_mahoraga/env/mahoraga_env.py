@@ -1,32 +1,35 @@
 from env.state import build_state_dict
-from env.enemy import Enemy
+from env.enemy import CurriculumEnemy
 from env.mechanics import (
     new_resistances, apply_action_effects, compute_enemy_damage,
     check_correct_adaptation
 )
 from env.rewards import compute_rewards
-from utils.constants import MAX_HP, MAX_TURNS, HEAL_COOLDOWN
+from utils.constants import MAX_HP, ENEMY_HP, MAX_TURNS, HEAL_COOLDOWN, ACTION_TO_TYPE
 from utils.validators import validate_action
 
 
 class MahoragaEnv:
     def __init__(self, debug=False):
         self.max_hp = MAX_HP
+        self.enemy_max_hp = ENEMY_HP
         self.max_turns = MAX_TURNS
-        self.enemy = Enemy()
+        self.enemy = CurriculumEnemy()
         self.debug = debug
         self.reset()
 
     def reset(self):
         self.agent_hp = self.max_hp
-        self.enemy_hp = self.max_hp
+        self.enemy_hp = self.enemy_max_hp
         self.resistances = new_resistances()
         self.adaptation_stack = 0
         self.last_action = None
+        self.last_adapted_category = None
         self.last_enemy_attack_type = None
         self.last_enemy_subtype = None
         self.turn_number = 0
         self.heal_cooldown_counter = 0
+        self.enemy = CurriculumEnemy()  # Reset enemy phase tracking
         return self._get_state()
 
     def _get_state(self):
@@ -55,12 +58,17 @@ class MahoragaEnv:
             action = None  # Nullify action — agent wastes turn
 
         # 1. Enemy attacks first
-        attack = self.enemy.get_attack()
-        attack_type = attack["type"]
+        attack = self.enemy.get_attack(
+            turn_number=self.turn_number,
+            resistances=self.resistances
+        )
+        category = attack["category"]
         subtype = attack["subtype"]
-        enemy_damage = compute_enemy_damage(attack_type, self.resistances, subtype=subtype)
+        ignore_armor = attack["ignore_armor"]
+
+        enemy_damage = compute_enemy_damage(category, self.resistances, ignore_armor=ignore_armor)
         self.agent_hp = max(0, self.agent_hp - enemy_damage)
-        self.last_enemy_attack_type = attack_type
+        self.last_enemy_attack_type = category
         self.last_enemy_subtype = subtype
 
         # Check early death from enemy attack
@@ -86,9 +94,13 @@ class MahoragaEnv:
         # 2. Mahoraga observes and takes action
         correct_adaptation = False
         if action is not None:
-            correct_adaptation = check_correct_adaptation(action, attack_type)
+            correct_adaptation = check_correct_adaptation(action, category)
             if correct_adaptation:
                 self.adaptation_stack += 1
+
+            # Track last adapted category for Judgment Strike logic
+            if action in ACTION_TO_TYPE:
+                self.last_adapted_category = ACTION_TO_TYPE[action]
 
         # 3. Apply agent action effects
         damage_dealt = 0
@@ -98,7 +110,8 @@ class MahoragaEnv:
                 apply_action_effects(
                     action, self.agent_hp, self.enemy_hp,
                     self.resistances, self.adaptation_stack,
-                    enemy_attack_type=attack_type
+                    enemy_category=category,
+                    last_adapted_category=self.last_adapted_category
                 )
             )
             damage_dealt = max(0, enemy_hp_before - self.enemy_hp)
@@ -106,6 +119,10 @@ class MahoragaEnv:
             # Set heal cooldown if heal was used
             if action == 4:
                 self.heal_cooldown_counter = HEAL_COOLDOWN
+
+            # Reset last_adapted_category after Judgment Strike consumes it
+            if action == 3:
+                self.last_adapted_category = None
 
         self.last_action = action
 

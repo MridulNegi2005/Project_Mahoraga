@@ -1,11 +1,12 @@
 # === HP ===
-MAX_HP = 1200
+MAX_HP = 1200       # Agent HP
+ENEMY_HP = 1000     # Enemy HP (asymmetric)
 MAX_TURNS = 25
 
-# === Attack Types (RL Level) ===
+# === Attack Categories (RL Level) ===
 ATTACK_TYPES = ["PHYSICAL", "CE", "TECHNIQUE"]
 
-# === Base Damage ===
+# === Base Damage per Category ===
 BASE_DAMAGE = {
     "PHYSICAL": 120,
     "CE": 150,
@@ -19,7 +20,6 @@ ADAPT_INCREASE = 40
 ADAPT_DECREASE = 20
 
 # === Judgment Strike ===
-BURST_THRESHOLD = 60
 JUDGMENT_BASE_DAMAGE = 100
 JUDGMENT_BURST_DAMAGE = 350
 
@@ -35,7 +35,7 @@ ACTION_JUDGMENT = 3
 ACTION_REGENERATION = 4
 VALID_ACTIONS = [0, 1, 2, 3, 4]
 
-# === Action to Resistance Type ===
+# === Action to Resistance Category ===
 ACTION_TO_TYPE = {
     0: "PHYSICAL",
     1: "CE",
@@ -50,5 +50,9 @@ SUBTYPES = {
 }
 
 # === Subtype Effects ===
-PIERCE_RESISTANCE_BYPASS = 0.2  # PIERCE ignores 20% resistance
+ARMOR_BYPASS_RATIO = 0.2  # PIERCE ignores 20% resistance (ignore_armor)
 
+# === Curriculum Enemy Phases ===
+PHASE_1_END = 5     # Turns 1-5: always PHYSICAL
+PHASE_2_END = 15    # Turns 6-15: cycling with 15% randomness
+PHASE_2_DEVIATION = 0.15

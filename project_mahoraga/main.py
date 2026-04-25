@@ -16,7 +16,7 @@ def main():
     state = env.reset()
 
     print("=" * 60)
-    print("  PROJECT MAHORAGA -- Phase 2 Episode")
+    print("  PROJECT MAHORAGA -- Curriculum Episode")
     print("=" * 60)
     print(f"\nInitial State:")
     print(f"  Agent HP: {state['agent_hp']}  |  Enemy HP: {state['enemy_hp']}")
@@ -35,16 +35,16 @@ def main():
         print(f"\nTurn {state['turn_number']}:")
         print(f"  Enemy:")
         print(f"    -> {state['last_enemy_subtype']} ({state['last_enemy_attack_type']})")
-        print(f"    -> Base Damage: {info['damage_taken']}")
+        print(f"    -> Damage: {info['damage_taken']}")
         print(f"  Mahoraga:")
         print(f"    -> {ACTION_NAMES.get(env.last_action, 'Unknown')}")
         print(f"  Result:")
-        print(f"    -> Agent HP:  {agent_hp_before} -> {state['agent_hp']}")
-        print(f"    -> Enemy HP:  {enemy_hp_before} -> {state['enemy_hp']}")
-        print(f"    -> Damage Taken: {info['damage_taken']}")
-        print(f"    -> Correct Adaptation: {'YES' if info.get('correct_adaptation') else 'NO'}")
-        print(f"    -> Stack: {info['adaptation_stack']}")
-        print(f"    -> Heal Cooldown: {env.heal_cooldown_counter} turns")
+        print(f"    -> Damage: {info['damage_taken']} | "
+              f"Correct Adaptation: {'YES' if info.get('correct_adaptation') else 'NO'} | "
+              f"Stack: {info['adaptation_stack']}")
+        print(f"    -> Agent HP: {agent_hp_before} -> {state['agent_hp']}")
+        print(f"    -> Enemy HP: {enemy_hp_before} -> {state['enemy_hp']}")
+        print(f"    -> Reward: {reward:.2f}")
         if info.get("heal_on_cooldown"):
             print(f"    ** HEAL BLOCKED (on cooldown) **")
 
