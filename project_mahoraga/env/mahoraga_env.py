@@ -10,10 +10,11 @@ from utils.validators import validate_action
 
 
 class MahoragaEnv:
-    def __init__(self):
+    def __init__(self, debug=False):
         self.max_hp = MAX_HP
         self.max_turns = MAX_TURNS
         self.enemy = Enemy()
+        self.debug = debug
         self.reset()
 
     def reset(self):
@@ -77,6 +78,9 @@ class MahoragaEnv:
             reward_dict = compute_rewards(info, state, action, True)
             info["reward_breakdown"] = reward_dict
             total_reward = sum(reward_dict.values())
+            if self.debug:
+                print(f"[DEBUG] INFO: {info}")
+                print(f"[DEBUG] REWARD: {reward_dict} = {total_reward:.2f}")
             return state, total_reward, True, info
 
         # 2. Mahoraga observes and takes action
@@ -130,5 +134,9 @@ class MahoragaEnv:
         reward_dict = compute_rewards(info, state, action, done)
         info["reward_breakdown"] = reward_dict
         total_reward = sum(reward_dict.values())
+
+        if self.debug:
+            print(f"[DEBUG] Turn {self.turn_number} | Action: {action} | INFO: dmg_taken={info['damage_taken']}, dmg_dealt={info['damage_dealt']}, correct={info['correct_adaptation']}")
+            print(f"[DEBUG] REWARD: {reward_dict} = {total_reward:.2f}")
 
         return state, total_reward, done, info
