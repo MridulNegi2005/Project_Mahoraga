@@ -583,4 +583,53 @@ print(f"Final win rate: {final_wins/10:.0%}")
 import shutil
 shutil.make_archive("/kaggle/working/mahoraga_results", "zip", "/kaggle/working", "checkpoints")
 print("Results packaged: /kaggle/working/mahoraga_results.zip")
-print("Done.")
+
+# %% CELL 14 — Difficulty-based evaluation
+from env.enemy import DifficultyEnemy
+
+print("\n--- Difficulty Evaluation ---")
+for difficulty in ["easy", "medium", "hard"]:
+    wins = 0
+    rewards = []
+    for ep in range(10):
+        enemy = DifficultyEnemy(difficulty=difficulty)
+        env_diff = MahoragaEnv(enemy=enemy)
+        _, ep_reward, ep_stats = run_episode(model, tokenizer, env_diff, verbose=False)
+        rewards.append(ep_reward)
+        if ep_stats["won"]:
+            wins += 1
+
+    avg_r = sum(rewards) / len(rewards)
+    print(f"  {difficulty.upper():8s}: win_rate={wins/10:.0%}, avg_reward={avg_r:.2f}")
+
+# %% CELL 15 — Export model for HuggingFace
+# Option A: Push directly to HuggingFace Hub
+HF_REPO_ID = "YOUR_USERNAME/mahoraga-qwen2.5-3b-lora"  # <-- Change this
+PUSH_TO_HUB = False  # Set to True to push
+
+if PUSH_TO_HUB:
+    from huggingface_hub import login
+    login()  # Will prompt for token (use HF_TOKEN secret on Kaggle)
+
+    model.push_to_hub(HF_REPO_ID, tokenizer=tokenizer, private=True)
+    print(f"✅ Model pushed to: https://huggingface.co/{HF_REPO_ID}")
+else:
+    print("Skipping HuggingFace push (set PUSH_TO_HUB=True to enable)")
+
+# Option B: Save merged model (full weights, not just LoRA adapter)
+merged_path = "/kaggle/working/mahoraga_merged_full"
+model.save_pretrained_merged(merged_path, tokenizer, save_method="merged_16bit")
+print(f"Merged 16-bit model saved to: {merged_path}")
+
+# Option C: Package everything for download from Kaggle
+shutil.make_archive("/kaggle/working/mahoraga_lora_weights", "zip",
+                    "/kaggle/working", "mahoraga_lora_final")
+shutil.make_archive("/kaggle/working/mahoraga_full_model", "zip",
+                    "/kaggle/working", "mahoraga_merged_full")
+
+print("\n📦 Downloadable files (from Kaggle Output tab):")
+print("  1. mahoraga_lora_weights.zip  — LoRA adapter only (small, needs base model)")
+print("  2. mahoraga_full_model.zip    — Full merged model (large, standalone)")
+print("  3. mahoraga_results.zip       — All checkpoints")
+print("\nDone. 🎯")
+

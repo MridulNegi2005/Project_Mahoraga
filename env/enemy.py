@@ -63,3 +63,61 @@ class CurriculumEnemy:
                 return random.choice(ATTACK_TYPES)
             lowest = min(resistances, key=resistances.get)
             return lowest
+
+
+class DifficultyEnemy:
+    """Difficulty-based enemy for EVALUATION only.
+
+    Modes:
+        'easy'   — Always same category (PHYSICAL). No randomness.
+        'medium' — Cycles PHYSICAL→CE→TECHNIQUE, 10% random injection.
+        'hard'   — Targets lowest resistance, 20% random injection.
+    """
+
+    VALID_DIFFICULTIES = ("easy", "medium", "hard")
+
+    def __init__(self, difficulty="medium"):
+        if difficulty not in self.VALID_DIFFICULTIES:
+            raise ValueError(f"Invalid difficulty: {difficulty}. Must be one of {self.VALID_DIFFICULTIES}")
+        self.difficulty = difficulty
+        self.pattern = ["PHYSICAL", "CE", "TECHNIQUE"]
+        self.pattern_index = 0
+
+    def get_attack(self, turn_number=None, resistances=None):
+        """Returns dict: {category, subtype, damage, ignore_armor}.
+
+        Same interface as CurriculumEnemy for drop-in use.
+        """
+        category = self._select_category(resistances)
+        subtype = random.choice(SUBTYPES[category])
+        ignore_armor = (subtype == "PIERCE")
+
+        return {
+            "category": category,
+            "subtype": subtype,
+            "damage": BASE_DAMAGE[category],
+            "ignore_armor": ignore_armor
+        }
+
+    def _select_category(self, resistances=None):
+        """Select attack category based on difficulty mode."""
+        if self.difficulty == "easy":
+            # Always PHYSICAL — no randomness
+            return "PHYSICAL"
+
+        elif self.difficulty == "medium":
+            # Cycle with 10% random injection
+            if random.random() < 0.10:
+                return random.choice(ATTACK_TYPES)
+            category = self.pattern[self.pattern_index]
+            self.pattern_index = (self.pattern_index + 1) % len(self.pattern)
+            return category
+
+        else:  # hard
+            # Target lowest resistance with 20% random injection
+            if random.random() < 0.20:
+                return random.choice(ATTACK_TYPES)
+            if resistances is None:
+                return random.choice(ATTACK_TYPES)
+            lowest = min(resistances, key=resistances.get)
+            return lowest
