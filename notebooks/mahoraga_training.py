@@ -60,7 +60,7 @@ import torch
 
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name="unsloth/Qwen2.5-3B-Instruct",
-    max_seq_length=1024,
+    max_seq_length=512,
     dtype=None,
     load_in_4bit=True,
 )
@@ -555,15 +555,15 @@ for iteration in range(NUM_ITERATIONS):
         train_dataset=train_dataset,
         args=SFTConfig(
             output_dir=iter_checkpoint_dir,
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=2,
             num_train_epochs=1,
             learning_rate=2e-5,
             warmup_steps=5,
             logging_steps=1,
             fp16=not torch.cuda.is_bf16_supported(),
             bf16=torch.cuda.is_bf16_supported(),
-            max_seq_length=1024,
+            max_seq_length=512,
             dataset_text_field="text",
             save_strategy="no",
         ),
