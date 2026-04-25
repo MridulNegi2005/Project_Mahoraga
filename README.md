@@ -70,27 +70,47 @@ Click **▶ LLM AUTO** to let the trained Qwen 2.5 3B model fight autonomously:
 ## 🏗️ Architecture
 
 ```
-Mahoraga/
-├── api.py                  # FastAPI server (REST endpoints + LLM inference)
-├── app.py                  # Gradio UI (standalone alternative)
-├── env/
-│   ├── mahoraga_env.py     # Main RL environment (MahoragaEnv)
-│   ├── enemy.py            # 3-phase curriculum enemy (CurriculumEnemy)
-│   ├── mechanics.py        # Combat math (damage, resistances, judgment)
-│   └── rewards.py          # Reward functions (7 components)
-├── utils/
-│   ├── constants.py        # Game constants (HP, damage, categories)
+meta_Mahoraga/
+├── api.py                  # FastAPI server (REST + LLM auto-play)
+├── app.py                  # Gradio dashboard (standalone)
+├── main.py                 # CLI: run a single episode
+│
+├── env/                    # Core RL environment
+│   ├── mahoraga_env.py     # MahoragaEnv (main environment class)
+│   ├── enemy.py            # CurriculumEnemy (3-phase) + DifficultyEnemy
+│   ├── mechanics.py        # Damage, resistance, judgment logic
+│   ├── rewards.py          # 7-component reward system
+│   ├── state.py            # State dict builder
+│   └── gym_wrapper.py      # Gymnasium-compatible wrapper
+│
+├── utils/                  # Constants and validation
+│   ├── constants.py        # HP, damage, phase constants
 │   └── validators.py       # Action validation
-├── frontend/               # React dashboard
-│   ├── src/App.jsx         # Main UI (727 lines)
-│   ├── src/index.css       # Design system (glass panels, animations)
-│   └── vite.config.js      # Vite + proxy to FastAPI
-├── mahoraga_loral_final/   # Trained LoRA weights (not in git)
-│   ├── adapter_config.json
-│   ├── adapter_model.safetensors
-│   └── tokenizer*.json
-└── notebooks/
-    └── mahoraga_training.py  # Kaggle training notebook
+│
+├── frontend/               # React + Framer Motion dashboard
+│   ├── src/App.jsx         # Main UI component
+│   ├── src/index.css       # Design system
+│   └── vite.config.js      # Vite + API proxy
+│
+├── notebooks/              # Training pipeline
+│   ├── mahoraga_training.py    # Source (Colab, saves to Drive)
+│   └── mahoraga_training.ipynb # Auto-generated notebook
+│
+├── tests/                  # Test suite (145 tests)
+│   ├── test_env.py         # Core environment tests (112)
+│   └── test_gym_wrapper.py # Gym wrapper tests (33)
+│
+├── scripts/                # Diagnostic tools
+│   ├── diagnose.py         # Strategy comparison
+│   ├── trace_medium.py     # Medium enemy trace
+│   └── random_agent_gym.py # Random agent baseline
+│
+├── docs/                   # Documentation & assets
+│   ├── SYSTEM_REPORT.md    # Full technical report
+│   ├── dashboard_preview.png
+│   └── mahoraga_wheel.svg
+│
+└── requirements.txt        # Python dependencies
 ```
 
 ---
@@ -129,7 +149,7 @@ Turn-based combat where Mahoraga has 5 actions:
 - **Model:** Qwen 2.5 3B Instruct (4-bit quantized via Unsloth)
 - **Method:** LoRA (r=16, α=16) targeting q/k/v/o projections
 - **Algorithm:** Reward-weighted SFT with episode-level modifiers + expert trajectory seeding
-- **Platform:** Kaggle (T4 GPU)
+- **Platform:** Google Colab (T4 GPU, saves to Drive)
 
 ---
 
@@ -178,7 +198,8 @@ vite                             # Build tool
 
 ## 👥 Team
 
-Built by **Atishay** — [GitHub](https://github.com/Atishay9828)
+- **Atishay** (RL Backend, Training Pipeline) — [GitHub](https://github.com/Atishay9828)
+- **Mridul** (Frontend Dashboard, FastAPI Bridge, UI/UX)
 
 ---
 

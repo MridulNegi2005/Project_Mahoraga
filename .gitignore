@@ -1,9 +1,43 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
 .env
 .venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Model weights (too large for git)
 mahoraga_loral_final/
+mahoraga_lora_final/
+mahoraga_merged_full/
 *.safetensors
+*.bin
+checkpoints/
+
+# Node / Frontend build artifacts
+node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Training outputs
+*.zip
+training_stats.json
+training_progress.png

@@ -1,0 +1,22 @@
+# Core environment
+numpy
+gymnasium
+
+# UI (Gradio dashboard)
+gradio>=4.0
+
+# API (FastAPI backend)
+fastapi
+uvicorn[standard]
+pydantic
+
+# Training (Colab/Kaggle)
+# unsloth
+# transformers
+# accelerate
+# peft
+# trl
+# bitsandbytes
+# datasets
+# torch
+# matplotlib
