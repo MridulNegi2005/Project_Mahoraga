@@ -1,23 +1,32 @@
 # %% [markdown]
-# # Project Mahoraga — RL-Based LLM Training Notebook (v2)
+# # Project Mahoraga — RL-Based LLM Training Notebook (v3 — Colab)
 # Qwen 2.5 3B + LoRA + Custom RL Environment
 #
-# **v2 CHANGES**: Rebalanced rewards, episode-level weighting,
-# action diversity enforcement, expert seeding.
+# **v3 CHANGES**: Migrated from Kaggle to Google Colab.
+# Models and checkpoints save to Google Drive.
 # Clones main branch (fully merged system).
 
 # %% CELL 1 — Install dependencies
 !pip install -q unsloth transformers accelerate peft trl bitsandbytes datasets torch matplotlib
 
-# %% CELL 2 — Clone repo and setup path
+# %% CELL 2 — Mount Google Drive and setup
 import os
 import sys
+from google.colab import drive
 
-!git clone --branch main https://github.com/Atishay9828/meta_Mahoraga.git /kaggle/working/meta_Mahoraga
+# Mount Drive — all checkpoints and models save here
+drive.mount('/content/drive')
 
-sys.path.insert(0, '/kaggle/working/meta_Mahoraga')
+DRIVE_DIR = "/content/drive/MyDrive/Mahoraga"
+os.makedirs(DRIVE_DIR, exist_ok=True)
+print(f"Drive mounted. Output dir: {DRIVE_DIR}")
 
-print("Repo cloned (branch: main) and path configured.")
+# Clone repo into Colab runtime (fast, ephemeral storage)
+!git clone --branch main https://github.com/Atishay9828/meta_Mahoraga.git /content/meta_Mahoraga
+
+sys.path.insert(0, '/content/meta_Mahoraga')
+
+print("Repo cloned and path configured.")
 
 # %% CELL 3 — Import environment and VERIFY reward signal
 from env.mahoraga_env import MahoragaEnv
@@ -452,8 +461,8 @@ FastLanguageModel.for_training(model)
 NUM_ITERATIONS = 5
 EPISODES_PER_ITER = 15
 
-CHECKPOINT_DIR = "/kaggle/working/checkpoints"
-STATS_PATH = "/kaggle/working/training_stats.json"
+CHECKPOINT_DIR = os.path.join(DRIVE_DIR, "checkpoints")
+STATS_PATH = os.path.join(DRIVE_DIR, "training_stats.json")
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 training_stats = []
@@ -616,15 +625,16 @@ def plot_training_progress(stats):
     axes[1][1].grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("/kaggle/working/training_progress.png", dpi=150, bbox_inches="tight")
+    plot_path = os.path.join(DRIVE_DIR, "training_progress.png")
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.show()
-    print("Plot saved to /kaggle/working/training_progress.png")
+    print(f"Plot saved to {plot_path}")
 
 
 plot_training_progress(training_stats)
 
 # %% CELL 13 — Save final model and evaluate
-save_path = "/kaggle/working/mahoraga_lora_final"
+save_path = os.path.join(DRIVE_DIR, "mahoraga_lora_final")
 
 model.save_pretrained(save_path)
 tokenizer.save_pretrained(save_path)
@@ -648,8 +658,8 @@ print(f"\nFinal avg reward: {sum(final_rewards)/len(final_rewards):.2f}")
 print(f"Final win rate: {final_wins/10:.0%}")
 
 import shutil
-shutil.make_archive("/kaggle/working/mahoraga_results", "zip", "/kaggle/working", "checkpoints")
-print("Results packaged: /kaggle/working/mahoraga_results.zip")
+shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_results"), "zip", DRIVE_DIR, "checkpoints")
+print(f"Results packaged: {DRIVE_DIR}/mahoraga_results.zip")
 
 # %% CELL 14 — Difficulty-based evaluation
 from env.enemy import DifficultyEnemy
@@ -676,7 +686,7 @@ PUSH_TO_HUB = False  # Set to True to push
 
 if PUSH_TO_HUB:
     from huggingface_hub import login
-    login()  # Will prompt for token (use HF_TOKEN secret on Kaggle)
+    login()  # Will prompt for token (or use Colab Secrets)
 
     model.push_to_hub(HF_REPO_ID, tokenizer=tokenizer, private=True)
     print(f"✅ Model pushed to: https://huggingface.co/{HF_REPO_ID}")
@@ -684,19 +694,21 @@ else:
     print("Skipping HuggingFace push (set PUSH_TO_HUB=True to enable)")
 
 # Option B: Save merged model (full weights, not just LoRA adapter)
-merged_path = "/kaggle/working/mahoraga_merged_full"
+merged_path = os.path.join(DRIVE_DIR, "mahoraga_merged_full")
 model.save_pretrained_merged(merged_path, tokenizer, save_method="merged_16bit")
 print(f"Merged 16-bit model saved to: {merged_path}")
 
-# Option C: Package everything for download from Kaggle
-shutil.make_archive("/kaggle/working/mahoraga_lora_weights", "zip",
-                    "/kaggle/working", "mahoraga_lora_final")
-shutil.make_archive("/kaggle/working/mahoraga_full_model", "zip",
-                    "/kaggle/working", "mahoraga_merged_full")
+# Option C: Package for download
+shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_lora_weights"), "zip",
+                    DRIVE_DIR, "mahoraga_lora_final")
+shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_full_model"), "zip",
+                    DRIVE_DIR, "mahoraga_merged_full")
 
-print("\n📦 Downloadable files (from Kaggle Output tab):")
-print("  1. mahoraga_lora_weights.zip  — LoRA adapter only (small, needs base model)")
-print("  2. mahoraga_full_model.zip    — Full merged model (large, standalone)")
+print(f"\n📦 Files saved to Google Drive ({DRIVE_DIR}):")
+print("  1. mahoraga_lora_weights.zip  — LoRA adapter only (small)")
+print("  2. mahoraga_full_model.zip    — Full merged model (large)")
 print("  3. mahoraga_results.zip       — All checkpoints")
-print("\nDone. 🎯")
+print("  4. training_progress.png      — Training plots")
+print("  5. training_stats.json        — Metrics")
+print("\n✅ All saved to Drive. Safe even if Colab disconnects.")
 
