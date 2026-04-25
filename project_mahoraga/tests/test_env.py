@@ -350,7 +350,7 @@ def test_adaptation_reward():
     env.reset()
     _, reward, _, info = env.step(0)
     breakdown = info["reward_breakdown"]
-    check("Correct adapt gives +1.5", breakdown["adaptation"] == 1.5)
+    check("Correct adapt gives +0.8", breakdown["adaptation"] == 0.8)
 
     env.reset()
     _, reward, _, info = env.step(1)
@@ -399,12 +399,12 @@ def test_terminal_reward():
     info_win = {"damage_taken": 0, "damage_dealt": 100, "correct_adaptation": False}
     state_win = {"agent_hp": 500, "enemy_hp": 0}
     rewards = compute_rewards(info_win, state_win, 3, done=True)
-    check("Win terminal = +5.0", rewards["terminal"] == 5.0)
+    check("Win terminal = +10.0", rewards["terminal"] == 10.0)
 
     info_loss = {"damage_taken": 100, "damage_dealt": 0, "correct_adaptation": False}
     state_loss = {"agent_hp": 0, "enemy_hp": 500}
     rewards = compute_rewards(info_loss, state_loss, 0, done=True)
-    check("Loss terminal = -5.0", rewards["terminal"] == -5.0)
+    check("Loss terminal = -8.0", rewards["terminal"] == -8.0)
 
     rewards_nd = compute_rewards(info_win, state_win, 0, done=False)
     check("Not done terminal = 0.0", rewards_nd["terminal"] == 0.0)
@@ -417,10 +417,29 @@ def test_reward_breakdown_in_info():
     _, reward, _, info = env.step(0)
     check("Info has reward_breakdown", "reward_breakdown" in info)
     breakdown = info["reward_breakdown"]
-    expected_keys = {"survival", "combat", "adaptation", "anti_cowardice", "efficiency", "terminal"}
-    check("Breakdown has all 6 components", set(breakdown.keys()) == expected_keys)
+    expected_keys = {"survival", "combat", "adaptation", "anti_cowardice", "efficiency", "terminal", "opportunity"}
+    check("Breakdown has all 7 components", set(breakdown.keys()) == expected_keys)
     total = sum(breakdown.values())
     check("Total reward = sum of components", abs(reward - total) < 1e-9)
+
+
+def test_opportunity_penalty():
+    print("\n--- Test: Opportunity Penalty ---")
+    env = MahoragaEnv()
+    env.reset()
+    # Build 2 stacks via correct adaptation
+    env.step(0)  # stack=1
+    _, _, _, info = env.step(0)  # stack=2
+    breakdown = info["reward_breakdown"]
+    check("Opportunity penalty when stack>=2 and not striking (-0.5)", breakdown["opportunity"] == -0.5)
+
+    # Now strike — no penalty
+    env.reset()
+    env.step(0)  # stack=1
+    env.step(0)  # stack=2
+    _, _, _, info3 = env.step(3)  # Judgment Strike
+    breakdown3 = info3["reward_breakdown"]
+    check("No opportunity penalty when striking", breakdown3["opportunity"] == 0.0)
 
 
 def test_no_reward_for_nothing():
@@ -470,6 +489,7 @@ if __name__ == "__main__":
     test_heal_penalty()
     test_terminal_reward()
     test_reward_breakdown_in_info()
+    test_opportunity_penalty()
     test_no_reward_for_nothing()
 
     print("\n" + "=" * 50)
