@@ -34,7 +34,8 @@ class MahoragaEnv:
             self.last_enemy_attack_type,
             self.last_enemy_subtype,
             self.last_action,
-            self.turn_number
+            self.turn_number,
+            self.adaptation_stack
         )
 
     def step(self, action):
