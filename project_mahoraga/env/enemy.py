@@ -1,7 +1,9 @@
 class Enemy:
-    def __init__(self):
-        pass
+    """Phase 1 enemy: always attacks with PHYSICAL."""
 
-    def get_action(self):
-        # Phase 0 behavior: always return "SLASH"
-        return "SLASH"
+    def __init__(self):
+        self.phase = 1
+
+    def get_attack(self):
+        """Returns (attack_type, subtype) tuple."""
+        return "PHYSICAL", "SLASH"

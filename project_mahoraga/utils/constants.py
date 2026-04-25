@@ -1,21 +1,42 @@
+# === HP ===
 MAX_HP = 1000
 MAX_TURNS = 25
 
-RESISTANCE_LIMITS = {
-    "MIN": 0,
-    "MAX": 80
+# === Attack Types (RL Level) ===
+ATTACK_TYPES = ["PHYSICAL", "CE", "TECHNIQUE"]
+
+# === Base Damage ===
+BASE_DAMAGE = {
+    "PHYSICAL": 120,
+    "CE": 150,
+    "TECHNIQUE": 220
 }
 
-RESISTANCE_CHANGES = {
-    "INCREASE": 40,
-    "DECREASE": 20
-}
+# === Resistance ===
+RESISTANCE_MIN = 0
+RESISTANCE_MAX = 80
+ADAPT_INCREASE = 40
+ADAPT_DECREASE = 20
 
-DAMAGE_VALUES = {
-    "BASE_DAMAGE": 100,
-    "BURST_DAMAGE": 350,
-    "ENEMY_BASE_DAMAGE": 100
-}
-
-HEAL_AMOUNT = 300
+# === Judgment Strike ===
 BURST_THRESHOLD = 60
+JUDGMENT_BASE_DAMAGE = 100
+JUDGMENT_BURST_DAMAGE = 350
+
+# === Regeneration ===
+HEAL_AMOUNT = 300
+
+# === Action Mapping ===
+ACTION_ADAPT_PHYSICAL = 0
+ACTION_ADAPT_CE = 1
+ACTION_ADAPT_TECHNIQUE = 2
+ACTION_JUDGMENT = 3
+ACTION_REGENERATION = 4
+VALID_ACTIONS = [0, 1, 2, 3, 4]
+
+# === Action to Resistance Type ===
+ACTION_TO_TYPE = {
+    0: "PHYSICAL",
+    1: "CE",
+    2: "TECHNIQUE"
+}
