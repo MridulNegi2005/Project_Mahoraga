@@ -3,3 +3,7 @@ __pycache__/
 *.pyo
 .env
 .venv/
+
+# Model weights (too large for git)
+mahoraga_loral_final/
+*.safetensors
