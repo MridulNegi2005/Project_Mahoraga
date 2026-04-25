@@ -10,11 +10,12 @@ from utils.validators import validate_action
 
 
 class MahoragaEnv:
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, difficulty="hard"):
         self.max_hp = MAX_HP
         self.enemy_max_hp = ENEMY_HP
         self.max_turns = MAX_TURNS
-        self.enemy = CurriculumEnemy()
+        self.difficulty = difficulty
+        self.enemy = CurriculumEnemy(difficulty=difficulty)
         self.debug = debug
         self.reset()
 
@@ -29,7 +30,7 @@ class MahoragaEnv:
         self.last_enemy_subtype = None
         self.turn_number = 0
         self.heal_cooldown_counter = 0
-        self.enemy = CurriculumEnemy()  # Reset enemy phase tracking
+        self.enemy = CurriculumEnemy(difficulty=self.difficulty)  # Reset enemy phase tracking
         return self._get_state()
 
     def _get_state(self):

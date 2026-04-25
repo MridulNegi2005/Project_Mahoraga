@@ -107,7 +107,18 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
     </style>
-</head>
+<style>
+@keyframes mahoraga-click {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(45deg); }
+}
+.animate-mahoraga-click {
+    animation: mahoraga-click 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.mahoraga-wheel-spoke {
+    transform-origin: center;
+}
+</style></head>
 <body class="bg-background text-on-background font-body-md text-body-md antialiased overflow-x-hidden">
 <!-- TopAppBar -->
 <header class="fixed top-0 w-full z-50 border-b border-slate-700/50 bg-[#0b1120]/80 backdrop-blur-md text-slate-300 shadow-none flex justify-between items-center h-14 px-8 max-w-full">
@@ -234,9 +245,48 @@
 <div class="mt-auto pt-4">
 <div class="w-full h-[120px] bg-surface rounded-lg border border-outline-variant/20 relative overflow-hidden" data-alt="Abstract visualization of a spinning gear or wheel mechanism, composed of thin, precise technical lines in slate and subtle orange, on a clean, light frost background">
 <!-- Placeholder for complex technical visualization -->
+<div class="absolute inset-0 flex items-center justify-center"><div class="relative w-24 h-24 animate-mahoraga-click">
+<svg class="w-full h-full text-primary opacity-80" viewbox="0 0 100 100">
+<circle class="opacity-30" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-dasharray="2 2" stroke-width="1"></circle>
+<circle cx="50" cy="50" fill="none" r="8" stroke="currentColor" stroke-width="2"></circle>
+<circle cx="50" cy="50" fill="none" r="35" stroke="currentColor" stroke-width="0.5"></circle>
+<g class="mahoraga-wheel-spoke">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(45deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(90deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(135deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(180deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(225deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(270deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(315deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+</svg>
 <div class="absolute inset-0 flex items-center justify-center">
-<span class="material-symbols-outlined text-4xl text-outline-variant animate-[spin_10s_linear_infinite]" style="font-variation-settings: 'FILL' 0;">autorenew</span>
+<div class="w-1 h-1 bg-primary rounded-full animate-ping"></div>
 </div>
+</div></div>
 </div>
 </div>
 </div>
@@ -244,7 +294,7 @@
 <!-- Big Moments Card (Span 12) -->
 <div class="lg:col-span-12 glass-panel rounded-xl p-xl border-l-4 border-l-tertiary-container relative overflow-hidden flex items-center justify-between bg-gradient-to-r from-surface-container-low to-surface-container-lowest">
 <div class="z-10">
-<span class="font-label-caps text-label-caps text-on-tertiary-container tracking-widest block mb-2">TACTICAL ANALYSIS UPDATE</span>
+<span class="font-label-caps text-label-caps text-on-tertiary-container tracking-widest block mb-2"><span class="material-symbols-outlined text-xs align-middle mr-2 text-primary">refresh</span>TACTICAL ANALYSIS UPDATE</span>
 <h2 class="font-display text-display text-on-surface tracking-tight uppercase">JUDGMENT STRIKE - ADAPTED</h2>
 <p class="font-body-md text-body-md text-on-surface-variant mt-4 max-w-2xl">Subject has successfully analyzed and developed countermeasures to the incoming blunt force trauma attack pattern. Defensive parameters updated.</p>
 </div>
@@ -294,7 +344,7 @@
 <div class="flex-1 overflow-y-auto space-y-4 pr-2">
 <div class="flex gap-4 items-start">
 <span class="font-mono-data text-mono-data text-outline-variant text-xs mt-1 w-16">14:02:44</span>
-<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2">
+<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2"><span class="material-symbols-outlined text-[10px] align-middle mr-1 text-primary animate-spin">published_with_changes</span>
 <span class="font-label-caps text-label-caps text-on-tertiary-container block mb-1">ADAPTATION COMPLETE</span>
 <p class="font-body-md text-body-md text-on-surface text-sm">Mahoraga wheel completed rotation. Strike countered.</p>
 </div>
