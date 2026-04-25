@@ -15,7 +15,7 @@ import sys
 
 !git clone --branch main https://github.com/Atishay9828/meta_Mahoraga.git /kaggle/working/meta_Mahoraga
 
-sys.path.insert(0, '/kaggle/working/meta_Mahoraga/project_mahoraga')
+sys.path.insert(0, '/kaggle/working/meta_Mahoraga')
 
 print("Repo cloned (branch: main) and path configured.")
 
