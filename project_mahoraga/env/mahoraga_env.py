@@ -24,6 +24,7 @@ class MahoragaEnv:
         self.last_enemy_attack_type = None
         self.last_enemy_subtype = None
         self.turn_number = 0
+        self.enemy.reset()
         return self._get_state()
 
     def _get_state(self):
@@ -42,7 +43,7 @@ class MahoragaEnv:
         self.turn_number += 1
 
         # 1. Enemy attacks first
-        attack_type, subtype = self.enemy.get_attack()
+        attack_type, subtype = self.enemy.get_attack(self.resistances)
         enemy_damage = compute_enemy_damage(attack_type, self.resistances)
         self.agent_hp = max(0, self.agent_hp - enemy_damage)
         self.last_enemy_attack_type = attack_type
