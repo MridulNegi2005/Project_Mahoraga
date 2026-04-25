@@ -10,12 +10,18 @@ from utils.validators import validate_action
 
 
 class MahoragaEnv:
-    def __init__(self, debug=False, enemy=None):
+    def __init__(self, debug=False, difficulty="hard", enemy=None):
         self.max_hp = MAX_HP
         self.enemy_max_hp = ENEMY_HP
         self.max_turns = MAX_TURNS
-        self._enemy_factory = (lambda: enemy.__class__(difficulty=enemy.difficulty)) if enemy else CurriculumEnemy
-        self.enemy = enemy if enemy else CurriculumEnemy()
+        self.difficulty = difficulty
+        # Custom enemy overrides difficulty-based CurriculumEnemy
+        if enemy is not None:
+            self._enemy_factory = lambda: enemy.__class__(difficulty=enemy.difficulty)
+            self.enemy = enemy
+        else:
+            self._enemy_factory = lambda: CurriculumEnemy(difficulty=self.difficulty)
+            self.enemy = CurriculumEnemy(difficulty=difficulty)
         self.debug = debug
         self.reset()
 

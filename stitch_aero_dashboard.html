@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Combat Dashboard - Aero-Tactical</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-dim": "#0b1120",
+                        "secondary-container": "#1e293b",
+                        "primary-container": "#1e3a8a",
+                        "on-secondary-container": "#cbd5e1",
+                        "surface-variant": "#1e293b",
+                        "on-background": "#f8fafc",
+                        "surface-container-lowest": "#020617",
+                        "on-secondary": "#020617",
+                        "on-tertiary-fixed": "#020617",
+                        "inverse-surface": "#f8fafc",
+                        "on-tertiary": "#020617",
+                        "primary-fixed-dim": "#3b82f6",
+                        "surface-tint": "#0ea5e9",
+                        "surface": "#0f172a",
+                        "on-tertiary-fixed-variant": "#020617",
+                        "tertiary-fixed-dim": "#1e293b",
+                        "on-error": "#020617",
+                        "inverse-on-surface": "#020617",
+                        "secondary-fixed-dim": "#64748b",
+                        "on-secondary-fixed-variant": "#020617",
+                        "on-primary-fixed": "#020617",
+                        "tertiary-fixed": "#334155",
+                        "inverse-primary": "#1e3a8a",
+                        "on-primary-container": "#dbeafe",
+                        "tertiary-container": "#1e293b",
+                        "secondary": "#64748b",
+                        "tertiary": "#94a3b8",
+                        "on-primary-fixed-variant": "#020617",
+                        "on-error-container": "#fecaca",
+                        "surface-container-low": "#0b1120",
+                        "on-surface-variant": "#94a3b8",
+                        "surface-bright": "#1e293b",
+                        "secondary-fixed": "#94a3b8",
+                        "surface-container-highest": "#334155",
+                        "on-surface": "#f8fafc",
+                        "primary": "#00f6ff",
+                        "background": "#0b1120",
+                        "on-primary": "#000000",
+                        "outline-variant": "#334155",
+                        "error-container": "#7f1d1d",
+                        "outline": "#475569",
+                        "on-secondary-fixed": "#020617",
+                        "error": "#f87171",
+                        "surface-container": "#0f172a",
+                        "on-tertiary-container": "#00f6ff",
+                        "primary-fixed": "#bfdbfe",
+                        "surface-container-high": "#1e293b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "20px",
+                        "sm": "8px",
+                        "lg": "24px",
+                        "xl": "40px",
+                        "unit": "4px",
+                        "margin": "32px",
+                        "md": "16px",
+                        "xs": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "mono-data": ["monospace"],
+                        "display": ["Inter"],
+                        "h1": ["Inter"],
+                        "h2": ["Inter"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "mono-data": ["14px", { "lineHeight": "1.4", "fontWeight": "500" }],
+                        "display": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "h1": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "h2": ["24px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background-color: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+<style>
+@keyframes mahoraga-click {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(45deg); }
+}
+.animate-mahoraga-click {
+    animation: mahoraga-click 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.mahoraga-wheel-spoke {
+    transform-origin: center;
+}
+</style></head>
+<body class="bg-background text-on-background font-body-md text-body-md antialiased overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 border-b border-slate-700/50 bg-[#0b1120]/80 backdrop-blur-md text-slate-300 shadow-none flex justify-between items-center h-14 px-8 max-w-full">
+<div class="flex items-center gap-4">
+<span class="text-lg font-black tracking-tighter text-slate-100 uppercase">AERO-TACTICAL</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 font-inter text-xs tracking-widest uppercase font-semibold text-slate-400">
+<button class="hover:bg-slate-800/50 transition-colors p-2 rounded-DEFAULT"><span class="material-symbols-outlined">notifications_active</span></button>
+<button class="hover:bg-slate-800/50 transition-colors p-2 rounded-DEFAULT"><span class="material-symbols-outlined">settings</span></button>
+<button class="hover:bg-slate-800/50 transition-colors p-2 rounded-DEFAULT"><span class="material-symbols-outlined">account_circle</span></button>
+</div>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-4 py-2 rounded-DEFAULT hover:opacity-90 transition-opacity">
+                SYSTEM READY
+            </button>
+</div>
+</header>
+<!-- SideNavBar -->
+<nav class="hidden md:flex fixed left-0 top-0 h-screen w-64 border-r border-slate-700/50 bg-[#0b1120]/90 backdrop-blur-xl flex-col py-20 px-4 z-40">
+<div class="mb-8 px-4">
+<h2 class="text-xl font-bold text-slate-100 tracking-tight">STRAT-COM</h2>
+<p class="font-inter text-sm tracking-tight text-slate-400 mt-1">Sector 7G - Active</p>
+</div>
+<button class="bg-surface-tint text-on-primary font-label-caps text-label-caps w-full py-3 rounded-DEFAULT mb-8 hover:opacity-90 transition-opacity">
+            NEW DEPLOYMENT
+        </button>
+<div class="flex-1 flex flex-col gap-2">
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">radar</span> Tactical Map
+            </a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">hub</span> Fleet Comms
+            </a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">inventory_2</span> Logistics
+            </a>
+<a class="bg-slate-800 text-[#00f6ff] border-l-2 border-[#00f6ff] font-medium px-4 py-3 flex items-center gap-3 transition-all rounded-r-DEFAULT translate-x-1 font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">videocam</span> Surveillance
+            </a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">analytics</span> Mission Intel
+            </a>
+</div>
+<div class="mt-auto flex flex-col gap-2 border-t border-slate-700/50 pt-4">
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">help</span> Support
+            </a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">keyboard</span> Terminal
+            </a>
+<a class="text-slate-400 px-4 py-3 flex items-center gap-3 hover:bg-slate-800 transition-all rounded-DEFAULT font-inter text-sm tracking-tight mt-4 text-error" href="#">
+<span class="material-symbols-outlined">logout</span> Log Out
+            </a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="pt-20 md:pl-72 pr-8 pb-12 min-h-screen">
+<div class="max-w-7xl mx-auto space-y-gutter">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-margin">
+<div>
+<h1 class="font-h1 text-h1 text-on-surface">Surveillance Feed</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Monitoring Subject Alpha engagement parameters.</p>
+</div>
+<div class="text-right">
+<span class="font-label-caps text-label-caps text-on-tertiary-container uppercase block mb-1">Status</span>
+<span class="font-mono-data text-mono-data text-on-surface bg-surface-container px-3 py-1 rounded-DEFAULT border border-outline-variant">ACTIVE ENGAGEMENT</span>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Target Status (Span 8) -->
+<div class="lg:col-span-8 glass-panel rounded-xl p-lg flex flex-col">
+<div class="flex justify-between items-center mb-6 border-b border-outline-variant/30 pb-4">
+<h2 class="font-h2 text-h2 text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">target</span> Target Status: Enemy
+                        </h2>
+<span class="font-mono-data text-mono-data text-outline">ID: E-9942</span>
+</div>
+<div class="flex-1 flex flex-col justify-center gap-6">
+<div class="flex items-center justify-between">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Structural Integrity</span>
+<span class="font-mono-data text-mono-data text-on-surface">42.8%</span>
+</div>
+<div class="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 42.8%;"></div>
+</div>
+<div class="grid grid-cols-3 gap-4 mt-4">
+<div class="bg-surface p-4 rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant block mb-2">Distance</span>
+<span class="font-mono-data text-mono-data text-on-surface text-lg">14.2m</span>
+</div>
+<div class="bg-surface p-4 rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant block mb-2">Velocity</span>
+<span class="font-mono-data text-mono-data text-on-surface text-lg">340 m/s</span>
+</div>
+<div class="bg-surface p-4 rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant block mb-2">Threat Level</span>
+<span class="font-mono-data text-mono-data text-error font-bold text-lg">CRITICAL</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Engine Core (Span 4) -->
+<div class="lg:col-span-4 glass-panel rounded-xl p-lg flex flex-col">
+<div class="flex justify-between items-center mb-6 border-b border-outline-variant/30 pb-4">
+<h2 class="font-body-lg text-body-lg font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">memory</span> Core: Mahoraga
+                        </h2>
+</div>
+<div class="flex-1 flex flex-col gap-4">
+<div class="flex justify-between items-center p-3 bg-surface rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Adaptation Rate</span>
+<span class="font-mono-data text-mono-data text-on-tertiary-container font-bold">+2.4%/s</span>
+</div>
+<div class="flex justify-between items-center p-3 bg-surface rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Wheel Rotation</span>
+<span class="font-mono-data text-mono-data text-on-surface">3/8</span>
+</div>
+<div class="flex justify-between items-center p-3 bg-surface rounded-lg border border-outline-variant/20">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Energy Output</span>
+<span class="font-mono-data text-mono-data text-on-surface">104.2 GW</span>
+</div>
+<div class="mt-auto pt-4">
+<div class="w-full h-[120px] bg-surface rounded-lg border border-outline-variant/20 relative overflow-hidden" data-alt="Abstract visualization of a spinning gear or wheel mechanism, composed of thin, precise technical lines in slate and subtle orange, on a clean, light frost background">
+<!-- Placeholder for complex technical visualization -->
+<div class="absolute inset-0 flex items-center justify-center"><div class="relative w-24 h-24 animate-mahoraga-click">
+<svg class="w-full h-full text-primary opacity-80" viewbox="0 0 100 100">
+<circle class="opacity-30" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-dasharray="2 2" stroke-width="1"></circle>
+<circle cx="50" cy="50" fill="none" r="8" stroke="currentColor" stroke-width="2"></circle>
+<circle cx="50" cy="50" fill="none" r="35" stroke="currentColor" stroke-width="0.5"></circle>
+<g class="mahoraga-wheel-spoke">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(45deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(90deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(135deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(180deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(225deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(270deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+<g class="mahoraga-wheel-spoke" style="transform: rotate(315deg);">
+<line stroke="currentColor" stroke-width="2" x1="50" x2="50" y1="15" y2="42"></line>
+<circle cx="50" cy="12" fill="currentColor" r="3"></circle>
+</g>
+</svg>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-1 h-1 bg-primary rounded-full animate-ping"></div>
+</div>
+</div></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Big Moments Card (Span 12) -->
+<div class="lg:col-span-12 glass-panel rounded-xl p-xl border-l-4 border-l-tertiary-container relative overflow-hidden flex items-center justify-between bg-gradient-to-r from-surface-container-low to-surface-container-lowest">
+<div class="z-10">
+<span class="font-label-caps text-label-caps text-on-tertiary-container tracking-widest block mb-2"><span class="material-symbols-outlined text-xs align-middle mr-2 text-primary">refresh</span>TACTICAL ANALYSIS UPDATE</span>
+<h2 class="font-display text-display text-on-surface tracking-tight uppercase">JUDGMENT STRIKE - ADAPTED</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-4 max-w-2xl">Subject has successfully analyzed and developed countermeasures to the incoming blunt force trauma attack pattern. Defensive parameters updated.</p>
+</div>
+<div class="z-10 hidden md:block">
+<span class="material-symbols-outlined text-[80px] text-tertiary-container opacity-20">shield_lock</span>
+</div>
+</div>
+<!-- Resistances & Counters (Span 6) -->
+<div class="lg:col-span-6 glass-panel rounded-xl p-lg flex flex-col">
+<div class="flex justify-between items-center mb-6 border-b border-outline-variant/30 pb-4">
+<h2 class="font-body-lg text-body-lg font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">security</span> Active Resistances
+                        </h2>
+</div>
+<div class="space-y-3">
+<div class="flex items-center justify-between p-3 bg-surface rounded-lg border border-outline-variant/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline-variant">water_drop</span>
+<span class="font-body-md text-body-md text-on-surface">Hydro-Kinetics</span>
+</div>
+<span class="font-label-caps text-label-caps bg-surface-container-high px-2 py-1 rounded text-on-surface-variant">IMMUNE</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface rounded-lg border border-outline-variant/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline-variant">local_fire_department</span>
+<span class="font-body-md text-body-md text-on-surface">Thermal Output</span>
+</div>
+<span class="font-label-caps text-label-caps bg-surface-container-high px-2 py-1 rounded text-on-surface-variant">94% MITIGATION</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface rounded-lg border border-outline-variant/20">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-outline-variant">electric_bolt</span>
+<span class="font-body-md text-body-md text-on-surface">Electromagnetic</span>
+</div>
+<span class="font-label-caps text-label-caps bg-surface-container-high px-2 py-1 rounded text-on-surface-variant">ANALYZING...</span>
+</div>
+</div>
+</div>
+<!-- Event Log (Span 6) -->
+<div class="lg:col-span-6 glass-panel rounded-xl p-lg flex flex-col h-[320px]">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant/30 pb-4">
+<h2 class="font-body-lg text-body-lg font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-outline">list_alt</span> Turn Log
+                        </h2>
+<button class="text-on-surface-variant hover:text-on-surface"><span class="material-symbols-outlined text-sm">filter_list</span></button>
+</div>
+<div class="flex-1 overflow-y-auto space-y-4 pr-2">
+<div class="flex gap-4 items-start">
+<span class="font-mono-data text-mono-data text-outline-variant text-xs mt-1 w-16">14:02:44</span>
+<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2"><span class="material-symbols-outlined text-[10px] align-middle mr-1 text-primary animate-spin">published_with_changes</span>
+<span class="font-label-caps text-label-caps text-on-tertiary-container block mb-1">ADAPTATION COMPLETE</span>
+<p class="font-body-md text-body-md text-on-surface text-sm">Mahoraga wheel completed rotation. Strike countered.</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="font-mono-data text-mono-data text-outline-variant text-xs mt-1 w-16">14:02:41</span>
+<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2">
+<span class="font-label-caps text-label-caps text-error block mb-1">INCOMING ATTACK DETECTED</span>
+<p class="font-body-md text-body-md text-on-surface text-sm">Enemy initiated Judgment Strike sequence.</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="font-mono-data text-mono-data text-outline-variant text-xs mt-1 w-16">14:02:35</span>
+<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant block mb-1">POSITION UPDATE</span>
+<p class="font-body-md text-body-md text-on-surface text-sm">Target distance decreased by 4.2m.</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="font-mono-data text-mono-data text-outline-variant text-xs mt-1 w-16">14:02:20</span>
+<div class="flex-1 border-l border-outline-variant/30 pl-4 pb-2">
+<span class="font-label-caps text-label-caps text-on-surface-variant block mb-1">SCAN COMPLETE</span>
+<p class="font-body-md text-body-md text-on-surface text-sm">Initial environment parameters mapped.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
