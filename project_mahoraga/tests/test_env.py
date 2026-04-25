@@ -8,7 +8,8 @@ from env.mechanics import (
     compute_judgment_damage
 )
 from env.enemy import Enemy, PatternEnemy
-from utils.constants import SUBTYPES, ATTACK_TYPES
+from env.rewards import compute_rewards
+from utils.constants import SUBTYPES, ATTACK_TYPES, MAX_HP
 
 PASS = 0
 FAIL = 0
@@ -355,9 +356,127 @@ def test_rl_observation_uses_3_types_only():
           set(state["resistances"].keys()) == {"physical", "ce", "technique"})
 
 
+# ========== PHASE 3 TESTS ==========
+
+def test_adaptation_reward():
+    print("\n--- Test: Adaptation Reward ---")
+    env = MahoragaEnv()
+    env.reset()
+
+    # Correct adaptation (action 0 = PHYSICAL, enemy = PHYSICAL)
+    _, reward, _, info = env.step(0)
+    breakdown = info["reward_breakdown"]
+    check("Correct adapt gives +1.5", breakdown["adaptation"] == 1.5)
+
+    # Wrong adaptation
+    env.reset()
+    _, reward, _, info = env.step(1)  # CE adapt vs PHYSICAL enemy
+    breakdown = info["reward_breakdown"]
+    check("Wrong adapt gives 0.0", breakdown["adaptation"] == 0.0)
+
+
+def test_damage_rewards():
+    print("\n--- Test: Damage Rewards ---")
+    env = MahoragaEnv()
+    env.reset()
+
+    # Taking damage should produce negative survival reward
+    _, _, _, info = env.step(0)
+    breakdown = info["reward_breakdown"]
+    check("Survival reward is negative (took damage)", breakdown["survival"] < 0)
+
+    # Dealing damage should produce positive combat reward
+    env.reset()
+    _, _, _, info = env.step(3)  # Judgment Strike
+    breakdown = info["reward_breakdown"]
+    check("Combat reward is positive (dealt damage)", breakdown["combat"] > 0)
+
+    # Adapt action = 0 damage dealt = 0 combat reward
+    env.reset()
+    _, _, _, info = env.step(0)
+    breakdown = info["reward_breakdown"]
+    check("Combat reward is 0 for adapt action", breakdown["combat"] == 0.0)
+
+
+def test_heal_penalty():
+    print("\n--- Test: Heal Penalty (Anti-Cowardice) ---")
+    env = MahoragaEnv()
+    env.reset()
+    # Agent starts at 1200 HP, 0.7 * 1200 = 840
+    # After 1 hit of ~120, HP ~1080 which is > 840 still
+    _, _, _, info = env.step(4)  # Heal at high HP
+    breakdown = info["reward_breakdown"]
+    check("Heal at high HP penalized (-1.0)", breakdown["anti_cowardice"] == -1.0)
+
+    # Heal at low HP should NOT be penalized
+    env.reset()
+    # Take lots of damage first
+    for _ in range(7):
+        env.step(1)  # Wrong adapt, take full damage each turn
+    # Agent HP should be well below 0.7 * 1200 = 840
+    check("Agent HP is low enough", env.agent_hp < 0.7 * MAX_HP)
+    _, _, _, info = env.step(4)  # Heal at low HP
+    breakdown = info["reward_breakdown"]
+    check("Heal at low HP NOT penalized (0.0)", breakdown["anti_cowardice"] == 0.0)
+
+
+def test_terminal_reward():
+    print("\n--- Test: Terminal Reward ---")
+    # Use reward function directly for cleaner testing
+    # Win scenario: agent HP > enemy HP
+    info_win = {"damage_taken": 0, "damage_dealt": 100, "correct_adaptation": False}
+    state_win = {"agent_hp": 500, "enemy_hp": 0}
+    rewards = compute_rewards(info_win, state_win, 3, done=True)
+    check("Win terminal = +5.0", rewards["terminal"] == 5.0)
+
+    # Loss scenario: agent HP <= enemy HP
+    info_loss = {"damage_taken": 100, "damage_dealt": 0, "correct_adaptation": False}
+    state_loss = {"agent_hp": 0, "enemy_hp": 500}
+    rewards = compute_rewards(info_loss, state_loss, 0, done=True)
+    check("Loss terminal = -5.0", rewards["terminal"] == -5.0)
+
+    # Not done: no terminal reward
+    rewards_nd = compute_rewards(info_win, state_win, 0, done=False)
+    check("Not done terminal = 0.0", rewards_nd["terminal"] == 0.0)
+
+
+def test_reward_breakdown_in_info():
+    print("\n--- Test: Reward Breakdown In Info ---")
+    env = MahoragaEnv()
+    env.reset()
+    _, reward, _, info = env.step(0)
+
+    check("Info has reward_breakdown", "reward_breakdown" in info)
+    breakdown = info["reward_breakdown"]
+    expected_keys = {"survival", "combat", "adaptation", "anti_cowardice", "efficiency", "terminal"}
+    check("Breakdown has all 6 components", set(breakdown.keys()) == expected_keys)
+
+    # Total reward should equal sum of components
+    total = sum(breakdown.values())
+    check("Total reward = sum of components", abs(reward - total) < 1e-9)
+
+    # Reward is no longer 0.0 placeholder
+    check("Reward is not placeholder 0.0", reward != 0.0 or total == 0.0)
+
+
+def test_no_reward_for_nothing():
+    print("\n--- Test: No Free Rewards ---")
+    env = MahoragaEnv()
+    env.reset()
+
+    # Heal on cooldown = wasted turn = should get no positive reward
+    env.step(4)  # First heal (works)
+    _, reward, _, info = env.step(4)  # Blocked heal (wasted)
+    breakdown = info["reward_breakdown"]
+    # No adaptation, no combat, no efficiency — only survival (negative)
+    check("No adaptation reward on wasted turn", breakdown["adaptation"] == 0.0)
+    check("No combat reward on wasted turn", breakdown["combat"] == 0.0)
+    check("No efficiency bonus on wasted turn", breakdown["efficiency"] == 0.0)
+
+
 if __name__ == "__main__":
     print("=" * 50)
-    print("  MahoragaEnv Phase 1+2 Tests")
+    print("  MahoragaEnv Phase 1+2+3 Tests")
     print("=" * 50)
 
     # Phase 1 tests
@@ -381,6 +500,14 @@ if __name__ == "__main__":
     test_pattern_enemy_randomness()
     test_enemy_dict_format()
     test_rl_observation_uses_3_types_only()
+
+    # Phase 3 tests
+    test_adaptation_reward()
+    test_damage_rewards()
+    test_heal_penalty()
+    test_terminal_reward()
+    test_reward_breakdown_in_info()
+    test_no_reward_for_nothing()
 
     print("\n" + "=" * 50)
     print(f"  Results: {PASS} passed, {FAIL} failed")

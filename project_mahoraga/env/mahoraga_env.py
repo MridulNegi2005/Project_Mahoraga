@@ -4,6 +4,7 @@ from env.mechanics import (
     new_resistances, apply_action_effects, compute_enemy_damage,
     check_correct_adaptation
 )
+from env.rewards import compute_rewards
 from utils.constants import MAX_HP, MAX_TURNS, HEAL_COOLDOWN
 from utils.validators import validate_action
 
@@ -72,7 +73,11 @@ class MahoragaEnv:
                 "adaptation_stack": self.adaptation_stack,
                 "heal_on_cooldown": heal_on_cooldown
             }
-            return self._get_state(), 0.0, True, info
+            state = self._get_state()
+            reward_dict = compute_rewards(info, state, action, True)
+            info["reward_breakdown"] = reward_dict
+            total_reward = sum(reward_dict.values())
+            return state, total_reward, True, info
 
         # 2. Mahoraga observes and takes action
         correct_adaptation = False
@@ -120,4 +125,10 @@ class MahoragaEnv:
             done = True
             info["reason"] = "Turn limit reached"
 
-        return self._get_state(), 0.0, done, info
+        # 5. Compute rewards
+        state = self._get_state()
+        reward_dict = compute_rewards(info, state, action, done)
+        info["reward_breakdown"] = reward_dict
+        total_reward = sum(reward_dict.values())
+
+        return state, total_reward, done, info
