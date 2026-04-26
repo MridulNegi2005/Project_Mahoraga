@@ -138,6 +138,10 @@ else:
 
 model.print_trainable_parameters()
 
+# Suppress HuggingFace max_length vs max_new_tokens warning permanently
+if hasattr(model, "generation_config"):
+    model.generation_config.max_length = None
+
 # %% CELL 6 — Prompt builder
 ACTION_NAMES = {
     0: "Physical Strike",
