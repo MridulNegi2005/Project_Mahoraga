@@ -561,8 +561,8 @@ for difficulty in ["easy", "medium", "hard"]:
                 train_dataset=train_dataset,
                 args=SFTConfig(
                     output_dir=os.path.join(CHECKPOINT_DIR, f"iter_{total_iters}"),
-                    per_device_train_batch_size=2,
-                    gradient_accumulation_steps=4,
+                    per_device_train_batch_size=4,
+                    gradient_accumulation_steps=2,
                     num_train_epochs=1,
                     learning_rate=2e-5,
                     warmup_steps=5,
