@@ -15,7 +15,7 @@
 [![Reward](https://img.shields.io/badge/Avg_Reward-18.55-blue?style=for-the-badge)]()
 [![Survived](https://img.shields.io/badge/Players_Who_Survived-Good_Luck-black?style=for-the-badge)]()
 
-📓 [**Training Notebook**](https://www.kaggle.com/code/atishay9828/meta-mahoraga/edit) · 🤗 [**Live Demo**](https://huggingface.co/spaces/MridulNegi2005/Project-Mahoraga) · 🏠 [**GitHub**](https://github.com/MridulNegi2005/Project_Mahoraga)
+📓 [**Training Notebook**](https://www.kaggle.com/code/atishay9828/meta-mahoraga/edit) · 🤗 [**Live Demo**](https://huggingface.co/spaces/MridulNegi2005/Project-Mahoraga) · 🏠 [**GitHub**](https://github.com/Atishay9828/meta_Mahoraga)
 
 </div>
 
