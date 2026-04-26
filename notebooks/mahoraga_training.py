@@ -59,6 +59,13 @@ assert info2["adapted"], "Boss should adapt after 2 same-type hits!"
 
 print("✅ Environment v2 verified. Boss adapts passively.")
 
+# Suppress noisy HuggingFace warnings (max_new_tokens vs max_length spam)
+import transformers
+transformers.logging.set_verbosity_error()
+import warnings
+warnings.filterwarnings("ignore", message=".*max_new_tokens.*max_length.*")
+warnings.filterwarnings("ignore", message=".*Both.*max_new_tokens.*")
+
 # %% CELL 4 — Auto-resume: find latest checkpoint
 def find_latest_checkpoint():
     """Scan Drive for the most recent saved model checkpoint."""
@@ -229,6 +236,7 @@ def run_episode(model, tokenizer, env, max_turns=30):
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=8,
+                max_length=None,
                 temperature=0.7,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id
