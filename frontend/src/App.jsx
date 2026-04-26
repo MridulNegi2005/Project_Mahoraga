@@ -65,7 +65,7 @@ function ResBar({ label, icon, value, flashing }) {
       transition={{ duration: 0.5 }}
     >
       <span className="material-symbols-outlined text-outline text-sm">{icon}</span>
-      <span className="text-[10px] font-bold tracking-wider uppercase text-muted w-12 shrink-0">
+      <span className="text-[10px] font-bold tracking-wider uppercase text-muted w-20 shrink-0">
         {label}
       </span>
       <div className="flex-1 h-1.5 bg-surface-high rounded-full overflow-hidden">
@@ -324,11 +324,14 @@ export default function App() {
         {/* ═══════ HEADER ═══════ */}
         <header className="glass-panel mx-2 mt-1.5 px-4 py-1.5 flex justify-between items-center z-10 shrink-0">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-black tracking-[-0.02em] uppercase text-text">
-              AERO-TACTICAL
-            </span>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-cyan animate-pulse" style={{ boxShadow: '0 0 8px rgba(0,246,255,0.6)' }} />
+              <span className="text-sm font-black tracking-[0.04em] uppercase text-text">
+                MAHORAGA
+              </span>
+            </div>
             <span className="text-[9px] text-muted tracking-wide hidden sm:inline">
-              Mahoraga Adaptation Engine
+              Adaptive Combat AI • RL + LLM Engine
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -365,19 +368,25 @@ export default function App() {
           {/* ── COL 1-5: Left Column (Boss + Player stacked) ── */}
           <div className="col-span-5 flex flex-col gap-2 min-h-0">
 
-            {/* Boss: Mahoraga (LLM-controlled enemy) */}
-            <div className="glass-panel p-3 shrink-0">
+            {/* Boss: Mahoraga (LLM-powered adaptive enemy) */}
+            <div className="glass-panel p-3 shrink-0 border-l-2 border-l-red/30">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline text-base">smart_toy</span>
-                  <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-red/70">
-                    ⚙ BOSS — MAHORAGA (AUTO)
+                  <span className="material-symbols-outlined text-red/60 text-base">smart_toy</span>
+                  <span className="text-[11px] font-black tracking-[0.08em] uppercase text-text">
+                    MAHORAGA
+                  </span>
+                  <span className="text-[7px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-red/10 text-red/60 border border-red/15">
+                    LLM BOSS
                   </span>
                 </div>
+                <span className="text-[8px] font-mono text-muted/50">
+                  {state.llm_raw ? 'AI THINKING...' : 'AWAITING'}
+                </span>
               </div>
               <HpBar current={state.mahoraga_hp} max={state.mahoraga_hp_max} color="red" label="Boss Integrity" />
               <div className="flex gap-1.5 mt-2">
-                <StatChip label="Stack" value={
+                <StatChip label="Adapt Stack" value={
                   <motion.span key={state.adaptation_stack} initial={{ scale: 1.5 }} animate={{ scale: 1 }}>
                     {state.adaptation_stack}
                   </motion.span>
@@ -387,51 +396,42 @@ export default function App() {
                   value={state.heal_cooldown === 0 ? "RDY" : state.heal_cooldown}
                   color={state.heal_cooldown === 0 ? "text-green" : "text-red"}
                 />
-                <StatChip label="Adapt Rate" value="+2.4%/s" color="text-cyan" />
+                <StatChip
+                  label="Threat"
+                  value={state.adaptation_stack >= 3 ? "MAX" : state.adaptation_stack >= 2 ? "HIGH" : "LOW"}
+                  color={state.adaptation_stack >= 3 ? "text-red" : state.adaptation_stack >= 2 ? "text-amber" : "text-green"}
+                />
               </div>
             </div>
 
-            {/* Player Status (user-controlled) */}
-            <div className="glass-panel p-3 shrink-0">
-              <div className="flex items-center justify-between mb-2">
+            {/* Player Status (user-controlled, compact) */}
+            <div className="glass-panel p-2.5 shrink-0">
+              <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline text-base">person</span>
+                  <span className="material-symbols-outlined text-green/60 text-sm">person</span>
                   <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-green/70">
-                    ⚔ YOU — PLAYER
+                    CHALLENGER
+                  </span>
+                  <span className="text-[7px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-green/10 text-green/60 border border-green/15">
+                    YOU
                   </span>
                 </div>
-                <span className="font-mono text-[9px] text-muted">MANUAL CONTROL</span>
+                <span className="font-mono text-[8px] text-muted/40">{difficulty.toUpperCase()} MODE</span>
               </div>
-              <HpBar current={state.enemy_hp} max={state.enemy_hp_max} color="green" label="Your Integrity" />
-              <div className="flex gap-1.5 mt-2">
-                <StatChip
-                  label="Status"
-                  value={state.enemy_hp < 400 ? "CRIT" : state.enemy_hp < 700 ? "WARN" : "OK"}
-                  color={state.enemy_hp < 400 ? "text-red" : state.enemy_hp < 700 ? "text-amber" : "text-green"}
-                />
-                <StatChip
-                  label="Phase"
-                  value={state.turn_number <= 5 ? "I" : state.turn_number <= 15 ? "II" : "III"}
-                />
-                <StatChip
-                  label="Difficulty"
-                  value={difficulty.toUpperCase()}
-                  color={difficulty === "easy" ? "text-green" : difficulty === "medium" ? "text-amber" : "text-red"}
-                />
-              </div>
+              <HpBar current={state.enemy_hp} max={state.enemy_hp_max} color="green" label="Your HP" />
             </div>
 
             {/* Resistances */}
-            <div className="glass-panel p-3 flex-1 min-h-0 flex flex-col">
+            <div className="glass-panel p-3 flex-1 min-h-0 flex flex-col border-l-2 border-l-cyan/20">
               <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-outline text-base">security</span>
+                <span className="material-symbols-outlined text-cyan/60 text-base">security</span>
                 <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted">
-                  ACTIVE RESISTANCES
+                  MAHORAGA RESISTANCES
                 </span>
               </div>
               <div className="space-y-1.5">
                 <ResBar label="Physical" icon="fitness_center" value={state.resistances?.Physical ?? 0} flashing={flashRes === "Physical"} />
-                <ResBar label="CE" icon="bolt" value={state.resistances?.CE ?? 0} flashing={flashRes === "CE"} />
+                <ResBar label="Cursed Energy" icon="bolt" value={state.resistances?.CE ?? 0} flashing={flashRes === "CE"} />
                 <ResBar label="Technique" icon="precision_manufacturing" value={state.resistances?.Technique ?? 0} flashing={flashRes === "Technique"} />
               </div>
             </div>
@@ -440,10 +440,10 @@ export default function App() {
           {/* ── COL 6-8: Center Column (Wheel + Phase + Tactics) ── */}
           <div className="col-span-3 flex flex-col gap-2 min-h-0">
 
-            {/* Mahoraga Adaptation Phase */}
-            <div className="glass-panel p-3 shrink-0">
+            {/* Boss AI Phase */}
+            <div className="glass-panel p-3 shrink-0 border-l-2 border-l-cyan/20">
               <div className="text-[8px] font-bold tracking-[0.2em] uppercase text-muted/50 mb-1.5">
-                MAHORAGA PHASE
+                BOSS AI INTELLIGENCE PHASE
               </div>
               <div className="flex gap-1">
                 {[
@@ -669,7 +669,7 @@ export default function App() {
 
           {/* Manual player attacks */}
           <Btn label="⚔ Physical" onClick={() => doStep("PHYSICAL")} disabled={done || autoPlay} />
-          <Btn label="⚔ CE" onClick={() => doStep("CE")} disabled={done || autoPlay} />
+          <Btn label="⚔ Cursed Energy" onClick={() => doStep("CE")} disabled={done || autoPlay} />
           <Btn label="⚔ Technique" onClick={() => doStep("TECHNIQUE")} disabled={done || autoPlay} />
           <div className="w-px h-5 bg-outline-variant/20 mx-0.5" />
 
