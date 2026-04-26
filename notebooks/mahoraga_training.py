@@ -240,6 +240,8 @@ def run_episode(model, tokenizer, env, max_turns=30):
         inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
 
         with torch.no_grad():
+            import transformers
+            transformers.logging.set_verbosity_error()
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=8,
