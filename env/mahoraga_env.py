@@ -117,25 +117,14 @@ class MahoragaEnv:
     def step(self, action):
         """Execute one turn of combat.
 
-        Flow: Player acts → Boss adapts → Boss attacks → Check done
+        Flow: Player acts → Boss adapts → Boss attacks → Tick cooldowns → Check done
         """
         validate_action(action)
         self.turn_number += 1
 
-        # ── 0. Tick cooldowns ──
+        # ── 0. Tick heal cooldown ──
         if self.heal_cooldown_counter > 0:
             self.heal_cooldown_counter -= 1
-
-        domain_ended = self.boss.tick_domain()
-        if domain_ended:
-            self.boss.apply_domain_end(DOMAIN_POST_RESISTANCE_BOOST)
-            self.domain_active = False
-            self.domain_turns_left = 0
-
-        if self.domain_turns_left > 0:
-            self.domain_turns_left -= 1
-            if self.domain_turns_left <= 0:
-                self.domain_active = False
 
         # ── 1. Player acts ──
         heal_on_cooldown = False
@@ -149,6 +138,8 @@ class MahoragaEnv:
         action_name = "Unknown"
         category = None
         subtype = None
+
+        prev_category = self.last_category
 
         if action in ACTION_TO_TYPE:
             # ATTACK
@@ -179,13 +170,13 @@ class MahoragaEnv:
                 self.boss.reduce_resistance(category, BLACK_FLASH_RESISTANCE_REDUCTION)
 
             # Crit stack tracking
-            if category == self.last_category:
+            if category == prev_category:
                 self.consecutive_same += 1
             else:
                 self.consecutive_same = 1
 
             # Update crit stack
-            if category == self.last_category:
+            if category == prev_category:
                 self.crit_stack += 1
             else:
                 self.crit_stack = 1
@@ -230,6 +221,14 @@ class MahoragaEnv:
 
         self.last_player_action = action
 
+        # ── 1b. Tick domain AFTER player's attack resolves ──
+        if self.domain_active and self.domain_turns_left > 0:
+            self.domain_turns_left -= 1
+            if self.domain_turns_left <= 0:
+                self.domain_active = False
+                self.boss.apply_domain_end(DOMAIN_POST_RESISTANCE_BOOST)
+        self.boss.tick_domain()
+
         # ── 2. Check if boss died from player's attack ──
         if self.boss.hp <= 0:
             info = self._build_info(
@@ -241,6 +240,7 @@ class MahoragaEnv:
                 category=category, subtype=subtype,
                 boss_attack_name=None, boss_attack_damage=0,
                 action_name=action_name,
+                prev_category=prev_category,
                 reason="Mahoraga defeated",
             )
             state = self._get_state()
@@ -274,6 +274,7 @@ class MahoragaEnv:
             boss_attack_name=boss_attack["name"],
             boss_attack_damage=boss_damage,
             action_name=action_name,
+            prev_category=prev_category,
             reason=reason,
         )
 
@@ -285,7 +286,7 @@ class MahoragaEnv:
                     adapted, adapt_category, domain_activated, healed,
                     heal_on_cooldown, category, subtype,
                     boss_attack_name, boss_attack_damage, action_name,
-                    reason=None):
+                    prev_category=None, reason=None):
         """Build the info dict for this step."""
         info = {
             # Damage
@@ -315,8 +316,8 @@ class MahoragaEnv:
             "healed": healed,
             "heal_on_cooldown": heal_on_cooldown,
 
-            # For rewards
-            "last_category": self.last_category,
+            # For rewards (prev_category = previous turn's category, for variety check)
+            "last_category": prev_category,
             "consecutive_same": self.consecutive_same,
 
             # Legacy compat

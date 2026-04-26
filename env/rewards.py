@@ -5,7 +5,7 @@ The RL agent is the PLAYER fighting against Mahoraga.
 Rewards incentivize: dealing damage, staying alive, varying attacks,
 using Domain at the right time, and killing the boss.
 """
-from utils.constants import PLAYER_HP, ACTION_HEAL, ACTION_DOMAIN
+from utils.constants import PLAYER_HP, MAHORAGA_HP, ACTION_HEAL, ACTION_DOMAIN
 
 
 def _damage_dealt_reward(damage_dealt):
@@ -89,7 +89,7 @@ def _terminal_reward(done, player_hp, boss_hp):
         return -10.0
     # Turn limit — compare HP ratios
     player_ratio = player_hp / PLAYER_HP
-    boss_ratio = boss_hp / 2000
+    boss_ratio = boss_hp / MAHORAGA_HP
     if player_ratio > boss_ratio:
         return 3.0  # Player is winning
     return -5.0  # Boss is winning

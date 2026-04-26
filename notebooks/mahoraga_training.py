@@ -169,7 +169,7 @@ def build_prompt(state):
     highest_key = max(boss_res, key=boss_res.get)
     highest_val = boss_res[highest_key]
 
-    domain_str = "ACTIVE (+50% DMG)" if domain_active else ("USED" if domain_used else "AVAILABLE")
+    domain_str = "ACTIVE (+75% DMG)" if domain_active else ("USED" if domain_used else "AVAILABLE")
     heal_str = f"COOLDOWN ({heal_cd} turns)" if heal_cd > 0 else "READY"
 
     prompt = f"""You are a sorcerer fighting Mahoraga, an adaptive boss that passively gains resistance to attack types you repeat.
@@ -192,10 +192,10 @@ Your Attack History: {history_str}
 ⚠️ Mahoraga's Highest Resistance: {highest_key} ({highest_val}%) — AVOID this type!
 
 Available Actions:
-0 = Physical Strike (120 base dmg, reduced by boss Physical resistance)
+0 = Physical Strike (130 base dmg, reduced by boss Physical resistance)
 1 = CE Blast (150 base dmg, 15% chance for BLACK FLASH = 2.5x dmg!)
-2 = Technique Strike (220 base dmg, highest risk/reward)
-3 = Domain Expansion (ONCE per fight: resets boss resistances, +50% dmg for 3 turns)
+2 = Technique Strike (190 base dmg, highest risk/reward)
+3 = Domain Expansion (ONCE per fight: resets boss resistances, +75% dmg for 3 turns)
 4 = Reversed Cursed Technique (heal 250 HP, 4-turn cooldown)
 
 STRATEGY GUIDE:

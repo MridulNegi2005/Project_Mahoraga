@@ -1,6 +1,7 @@
 """
-Mahoraga Adaptation Engine — FastAPI Bridge
+Mahoraga Boss Fight — FastAPI Bridge
 Wraps MahoragaEnv with REST endpoints for the React combat dashboard.
+The RL agent is the PLAYER (sorcerer) fighting Mahoraga (adaptive boss).
 Includes LLM auto-play via trained Qwen 2.5 3B LoRA model.
 """
 import sys
@@ -14,18 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
-from env.mahoraga_env import MahoragaEnv
-from utils.constants import MAX_HP, ENEMY_HP, MAX_TURNS
-
-# ── Action lookup ──
-ACTION_NAMES = {
-    0: "Adapt PHYSICAL",
-    1: "Adapt CE",
-    2: "Adapt TECHNIQUE",
-    3: "Judgment Strike",
-    4: "Regeneration",
-    None: "Wasted Turn",
-}
+from env.mahoraga_env import MahoragaEnv, ACTION_NAMES
+from utils.constants import PLAYER_HP, MAHORAGA_HP, MAX_TURNS
 
 app = FastAPI(title="Mahoraga Adaptation Engine API", version="3.0.0")
 
@@ -116,30 +107,57 @@ def load_llm():
 
 
 def build_prompt(state_dict):
-    """Build instruction prompt from environment state."""
-    res = state_dict["resistances"]
-    return f"""You are Mahoraga, an adaptive combat agent in a turn-based RL environment.
+    """Build instruction prompt for the player (sorcerer) fighting Mahoraga."""
+    boss_res = state_dict.get("boss_resistances", {
+        "PHYSICAL": state_dict["resistances"]["physical"],
+        "CE": state_dict["resistances"]["ce"],
+        "TECHNIQUE": state_dict["resistances"]["technique"],
+    })
+    history = state_dict.get("attack_history", [])
+    crit_stack = state_dict.get("crit_stack", 0)
+    domain_used = state_dict.get("domain_used", False)
+    domain_active = state_dict.get("domain_active", False)
+    heal_cd = state_dict.get("heal_cooldown", 0)
+    wheel_turns = state_dict.get("boss_wheel_turns", 0)
+
+    history_str = " -> ".join(history) if len(history) >= 2 else "Not enough data yet"
+    highest_key = max(boss_res, key=boss_res.get)
+    highest_val = boss_res[highest_key]
+    domain_str = "ACTIVE (+75% DMG)" if domain_active else ("USED" if domain_used else "AVAILABLE")
+    heal_str = f"COOLDOWN ({heal_cd} turns)" if heal_cd > 0 else "READY"
+
+    return f"""You are a sorcerer fighting Mahoraga, an adaptive boss that passively gains resistance to attack types you repeat.
 
 Current State:
-- Your HP: {state_dict['agent_hp']}
-- Enemy HP: {state_dict['enemy_hp']}
-- Resistances: Physical={res['physical']}, CE={res['ce']}, Technique={res['technique']}
-- Last Enemy Attack: {state_dict['last_enemy_attack_type']}
-- Last Action Taken: {state_dict['last_action']}
-- Turn: {state_dict['turn_number']}
+- Your HP: {state_dict.get('player_hp', state_dict.get('agent_hp', 0))}
+- Mahoraga HP: {state_dict.get('boss_hp', state_dict.get('enemy_hp', 0))}
+- Mahoraga Resistances: Physical={boss_res['PHYSICAL']}%, CE={boss_res['CE']}%, Technique={boss_res['TECHNIQUE']}%
+- Mahoraga Wheel Turns: {wheel_turns} (more = stronger boss attacks)
+- Last Boss Attack: {state_dict.get('last_boss_attack', 'None')}
+- Turn: {state_dict['turn_number']}/30
+
+Your Status:
+- Crit Stack: {crit_stack}/3 (3 = next same-type hit does 1.5x)
+- Domain Expansion: {domain_str}
+- Heal: {heal_str}
+
+Your Attack History: {history_str}
+
+WARNING: Mahoraga's Highest Resistance: {highest_key} ({highest_val}%) — AVOID this type!
 
 Available Actions:
-0 = Adapt Physical Resistance (+40 Physical, -20 others)
-1 = Adapt CE Resistance (+40 CE, -20 others)
-2 = Adapt Technique Resistance (+40 Technique, -20 others)
-3 = Judgment Strike (burst if you adapted to enemy's type, resets resistances)
-4 = Regeneration (heal 300 HP, 3-turn cooldown)
+0 = Physical Strike (130 base dmg, reduced by boss Physical resistance)
+1 = CE Blast (150 base dmg, 15% chance for BLACK FLASH = 2.5x dmg!)
+2 = Technique Strike (190 base dmg, highest risk/reward)
+3 = Domain Expansion (ONCE per fight: resets boss resistances, +75% dmg for 3 turns)
+4 = Reversed Cursed Technique (heal 250 HP, 4-turn cooldown)
 
-WINNING STRATEGY:
-1. Adapt to enemy attack type 2 times to build resistance + stacks
-2. Use Judgment Strike for burst damage (350 + 50 per stack)
-3. Repeat: Adapt → Adapt → Strike
-4. Heal ONLY when HP is critically low
+STRATEGY GUIDE:
+1. VARY your attacks — if you spam one type, Mahoraga adapts and becomes resistant
+2. Use CE attacks for chance of Black Flash (2.5x damage!)
+3. Save Domain Expansion for when Mahoraga has high resistances
+4. Kill Mahoraga FAST — the longer the fight, the stronger it gets
+5. Heal ONLY when HP is critically low
 
 Choose the best action. Return ONLY a single integer (0-4)."""
 
@@ -202,6 +220,11 @@ class Resistances(BaseModel):
 
 
 class CombatState(BaseModel):
+    player_hp: int
+    player_hp_max: int
+    boss_hp: int
+    boss_hp_max: int
+    # Legacy aliases for frontend compat
     enemy_hp: int
     enemy_hp_max: int
     mahoraga_hp: int
@@ -226,27 +249,10 @@ class ResetRequest(BaseModel):
     difficulty: str = "hard"
 
 
-# ── Helper ──
-def make_combat_state(state, env_instance, turn_log=None, llm_raw=None):
-    return CombatState(
-        enemy_hp=state["enemy_hp"],
-        enemy_hp_max=ENEMY_HP,
-        mahoraga_hp=state["agent_hp"],
-        mahoraga_hp_max=MAX_HP,
-        resistances=Resistances(
-            Physical=state["resistances"]["physical"],
-            CE=state["resistances"]["ce"],
-            Technique=state["resistances"]["technique"],
-        ),
-        adaptation_stack=env_instance.adaptation_stack if hasattr(env_instance, 'adaptation_stack') else 0,
-        heal_cooldown=env_instance.heal_cooldown_counter,
-        turn_number=state["turn_number"],
-        max_turns=MAX_TURNS,
-        done=False,
-        done_reason=None,
-        turn_log=turn_log,
-        difficulty=current_difficulty,
-        llm_raw=llm_raw,
+def _make_resistances(state):
+    res = state["resistances"]
+    return Resistances(
+        Physical=res["physical"], CE=res["ce"], Technique=res["technique"],
     )
 
 
@@ -260,11 +266,16 @@ def reset(req: ResetRequest = ResetRequest()):
     env = MahoragaEnv(difficulty=current_difficulty)
     env.reset()
 
+    boss_hp = env.boss.max_hp
     return CombatState(
-        enemy_hp=ENEMY_HP,
-        enemy_hp_max=ENEMY_HP,
-        mahoraga_hp=MAX_HP,
-        mahoraga_hp_max=MAX_HP,
+        player_hp=PLAYER_HP,
+        player_hp_max=PLAYER_HP,
+        boss_hp=boss_hp,
+        boss_hp_max=boss_hp,
+        enemy_hp=boss_hp,
+        enemy_hp_max=boss_hp,
+        mahoraga_hp=PLAYER_HP,
+        mahoraga_hp_max=PLAYER_HP,
         resistances=Resistances(Physical=0, CE=0, Technique=0),
         adaptation_stack=0,
         heal_cooldown=0,
@@ -294,22 +305,23 @@ def _do_step(action, llm_raw=None):
         mahoraga_action=action_name,
         damage_taken=info["damage_taken"],
         damage_dealt=info["damage_dealt"],
-        correct_adaptation=info["correct_adaptation"],
+        correct_adaptation=info.get("correct_adaptation", info.get("adapted", False)),
         reward=round(reward, 2),
         heal_blocked=info.get("heal_on_cooldown", False),
     )
 
+    boss_hp_max = env.boss.max_hp
     return CombatState(
+        player_hp=state["player_hp"],
+        player_hp_max=PLAYER_HP,
+        boss_hp=state["boss_hp"],
+        boss_hp_max=boss_hp_max,
         enemy_hp=state["enemy_hp"],
-        enemy_hp_max=ENEMY_HP,
+        enemy_hp_max=boss_hp_max,
         mahoraga_hp=state["agent_hp"],
-        mahoraga_hp_max=MAX_HP,
-        resistances=Resistances(
-            Physical=state["resistances"]["physical"],
-            CE=state["resistances"]["ce"],
-            Technique=state["resistances"]["technique"],
-        ),
-        adaptation_stack=info["adaptation_stack"],
+        mahoraga_hp_max=PLAYER_HP,
+        resistances=_make_resistances(state),
+        adaptation_stack=info.get("adaptation_stack", env.boss.total_wheel_turns),
         heal_cooldown=env.heal_cooldown_counter,
         turn_number=state["turn_number"],
         max_turns=MAX_TURNS,
@@ -358,33 +370,29 @@ def model_status():
 
 
 def _smart_agent_action():
-    """Rule-based fallback agent mimicking the trained LLM's strategy."""
+    """Rule-based fallback: sorcerer fighting Mahoraga.
+
+    Strategy: cycle attacks to avoid adaptation, use domain when
+    resistances are high, heal when low.
+    """
     if env is None:
         return 0
 
     state = env._get_state()
-    agent_hp = state["agent_hp"]
-    res = state["resistances"]
+    player_hp = state.get("player_hp", state.get("agent_hp", 0))
+    boss_res = state.get("boss_resistances", {"PHYSICAL": 0, "CE": 0, "TECHNIQUE": 0})
 
-    # Heal if critical HP and cooldown ready
-    if agent_hp < 300 and env.heal_cooldown_counter == 0:
+    if player_hp < 400 and env.heal_cooldown_counter == 0:
         return 4
 
-    # Judgment Strike if stacks >= 3 (or >= 2 and adapted to right type)
-    if env.adaptation_stack >= 3:
-        return 3
-    if env.adaptation_stack >= 2 and env.last_adapted_category == state.get("last_enemy_attack_type"):
-        return 3
+    if not env.domain_used:
+        high = sum(1 for v in boss_res.values() if v >= 30)
+        if high >= 2:
+            return 3
 
-    # Adapt to last enemy attack type
-    last_attack = state.get("last_enemy_attack_type")
-    adapt_map = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}
-    if last_attack and last_attack in adapt_map:
-        return adapt_map[last_attack]
-
-    # Default: adapt to weakest resistance
-    weakest = min(res, key=res.get)
-    return adapt_map.get(weakest.upper(), 0)
+    weakest = min(boss_res, key=boss_res.get)
+    action_map = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}
+    return action_map.get(weakest, 0)
 
 
 if __name__ == "__main__":

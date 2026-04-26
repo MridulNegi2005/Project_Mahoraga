@@ -1,52 +1,44 @@
-from env.mahoraga_env import MahoragaEnv
-from env.enemy import DifficultyEnemy
+"""Trace a medium-difficulty game step by step."""
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-TYPE_MAP = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}
+from env.mahoraga_env import MahoragaEnv, ACTION_NAMES
+from utils.constants import MAX_TURNS
 
-# Trace a medium episode with reactive adaptation
-env = MahoragaEnv(enemy=DifficultyEnemy("medium"), debug=True)
-s = env.reset()
-cycle = 0
-for t in range(12):
-    last = s.get("last_enemy_attack_type", "PHYSICAL")
-    if cycle < 2:
-        a = TYPE_MAP.get(last, 0)
-        cycle += 1
+print("=" * 60)
+print("  Mahoraga Trace — Medium Difficulty")
+print("=" * 60)
+
+env = MahoragaEnv(difficulty="medium", debug=False)
+state = env.reset()
+cycle = [0, 1, 2]
+domain_used = False
+
+for t in range(MAX_TURNS):
+    player_hp = state.get("player_hp", 0)
+    boss_res = state.get("boss_resistances", {"PHYSICAL": 0, "CE": 0, "TECHNIQUE": 0})
+
+    if player_hp < 400 and env.heal_cooldown_counter == 0:
+        action = 4
+    elif not domain_used and t >= 6 and sum(1 for v in boss_res.values() if v >= 25) >= 1:
+        action = 3
+        domain_used = True
     else:
-        a = 3
-        cycle = 0
-    s, r, d, info = env.step(a)
-    ahp = s["agent_hp"]
-    ehp = s["enemy_hp"]
-    res = s["resistances"]
-    atk = s["last_enemy_attack_type"]
-    correct = info["correct_adaptation"]
-    print(f"  HP: {ahp}/{ehp} | Res: p={res['physical']} c={res['ce']} t={res['technique']} | EnemyAtk={atk} | Correct={correct}")
-    if d:
-        print(f"DONE: {info['reason']}")
-        break
+        action = cycle[t % 3]
 
-print("\n\n--- Now try: always adapt to CURRENT enemy attack (impossible but let's see damage) ---")
-env2 = MahoragaEnv(enemy=DifficultyEnemy("medium"))
-s2 = env2.reset()
-cycle2 = 0
-for t in range(15):
-    # Cheat: look at what enemy will do this turn by peeking
-    # We can't actually do this, but let's manually check damage
-    if cycle2 < 2:
-        # Just always adapt PHYSICAL for now
-        a = 0
-        cycle2 += 1
-    else:
-        a = 3
-        cycle2 = 0
-    s2, r2, d2, info2 = env2.step(a)
-    ahp = s2["agent_hp"]
-    ehp = s2["enemy_hp"]
-    atk = s2["last_enemy_attack_type"]
-    dmg = info2["damage_taken"]
-    dealt = info2["damage_dealt"]
-    print(f"  T{t+1}: EnemyAtk={atk} dmg_taken={dmg} | Action={a} dmg_dealt={dealt} | HP: {ahp}/{ehp}")
-    if d2:
-        print(f"DONE: {info2['reason']}")
+    state, reward, done, info = env.step(action)
+
+    boss_res = state.get("boss_resistances", {})
+    print(f"  T{t+1:2d}: {ACTION_NAMES.get(action, '?'):24s} "
+          f"dealt={info['damage_dealt']:3d} taken={info['damage_taken']:3d} | "
+          f"PlayerHP={state['player_hp']:5d} BossHP={state['boss_hp']:5d} | "
+          f"Res: P={boss_res.get('PHYSICAL',0):2d} CE={boss_res.get('CE',0):2d} "
+          f"T={boss_res.get('TECHNIQUE',0):2d} | "
+          f"Wheels={state.get('boss_wheel_turns', 0)} | "
+          f"R={reward:+.2f}")
+
+    if done:
+        won = state["boss_hp"] <= 0
+        print(f"\n  RESULT: {'VICTORY' if won else 'DEFEAT'} — {info.get('reason')}")
         break
