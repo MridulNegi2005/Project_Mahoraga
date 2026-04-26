@@ -220,7 +220,7 @@ class CombatState(BaseModel):
 
 
 class StepRequest(BaseModel):
-    action: int  # 0-4
+    player_action: Optional[str] = None  # None means auto (based on difficulty)
 
 
 class ResetRequest(BaseModel):
@@ -278,14 +278,23 @@ def reset(req: ResetRequest = ResetRequest()):
     )
 
 
-def _do_step(action, llm_raw=None):
-    """Execute one turn of combat (shared by manual step and auto-step)."""
+def _do_step(player_action=None):
+    """Execute one turn of combat. Mahoraga uses LLM to pick action, player uses player_action."""
     global env
     if env is None:
         env = MahoragaEnv(difficulty=current_difficulty)
         env.reset()
 
-    state, reward, done, info = env.step(action)
+    # Load model on first call
+    if not llm_loaded and not load_llm():
+        # Fallback to smart rule-based agent
+        mahoraga_action = _smart_agent_action()
+        llm_raw = "[FALLBACK] rule-based"
+    else:
+        state_dict = env._get_state()
+        mahoraga_action, llm_raw = llm_choose_action(state_dict)
+
+    state, reward, done, info = env.step(mahoraga_action, enemy_category_override=player_action)
     action_name = ACTION_NAMES.get(env.last_action, "Unknown")
 
     turn_log = TurnLog(
@@ -324,28 +333,8 @@ def _do_step(action, llm_raw=None):
 
 @app.post("/api/step", response_model=CombatState)
 def step(req: StepRequest):
-    """Execute one manual turn of combat."""
-    return _do_step(req.action)
-
-
-@app.post("/api/auto-step", response_model=CombatState)
-def auto_step():
-    """Execute one turn using the trained LLM to choose the action."""
-    global env
-    if env is None:
-        env = MahoragaEnv(difficulty=current_difficulty)
-        env.reset()
-
-    # Load model on first call
-    if not llm_loaded and not load_llm():
-        # Fallback to smart rule-based agent
-        action = _smart_agent_action()
-        return _do_step(action, llm_raw="[FALLBACK] rule-based")
-
-    # Get LLM's state observation
-    state_dict = env._get_state()
-    action, raw_output = llm_choose_action(state_dict)
-    return _do_step(action, llm_raw=raw_output)
+    """Execute one turn of combat."""
+    return _do_step(req.player_action)
 
 
 @app.get("/api/model-status")

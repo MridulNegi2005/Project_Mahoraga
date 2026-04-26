@@ -65,7 +65,7 @@ function ResBar({ label, icon, value, flashing }) {
       transition={{ duration: 0.5 }}
     >
       <span className="material-symbols-outlined text-outline text-sm">{icon}</span>
-      <span className="text-[10px] font-bold tracking-wider uppercase text-muted w-12 shrink-0">
+      <span className="text-[10px] font-bold tracking-wider uppercase text-muted w-20 shrink-0">
         {label}
       </span>
       <div className="flex-1 h-1.5 bg-surface-high rounded-full overflow-hidden">
@@ -193,7 +193,7 @@ export default function App() {
     difficulty: "hard",
   };
 
-  async function doReset(diff) {
+  async function doReset(diff, clearLogs = true) {
     const d2use = diff || difficulty;
     setLoading(true);
     setAutoPlay(false);
@@ -208,7 +208,7 @@ export default function App() {
     } catch {
       setState({ ...MOCK_STATE, difficulty: d2use });
     }
-    setLogs([]); setLastLog(null);
+    if (clearLogs) { setLogs([]); setLastLog(null); }
     setWheelRot(0); prevRes.current = { Physical: 0, CE: 0, Technique: 0 };
     setLoading(false);
   }
@@ -256,8 +256,9 @@ export default function App() {
       const r = await fetch(`${API}/api/step`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ player_action: action }),
       });
+      if (!r.ok) { setLoading(false); return; }
       const d = await r.json();
       processStepResult(d);
     } catch {
@@ -270,7 +271,12 @@ export default function App() {
     if (autoPlay && state && !state.done && !loading) {
       autoRef.current = setTimeout(async () => {
         try {
-          const r = await fetch(`${API}/api/auto-step`, { method: "POST" });
+          const r = await fetch(`${API}/api/step`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ player_action: null })
+          });
+          if (!r.ok) { setAutoPlay(false); return; }
           const d = await r.json();
           processStepResult(d);
         } catch { setAutoPlay(false); }
@@ -281,7 +287,12 @@ export default function App() {
 
   /* ── Stop auto-play when game ends ── */
   useEffect(() => {
-    if (state?.done) setAutoPlay(false);
+    if (state?.done) {
+      setAutoPlay(false);
+      // Auto-reset stats after 3 seconds, but keep combat logs
+      const t = setTimeout(() => doReset(null, false), 3000);
+      return () => clearTimeout(t);
+    }
   }, [state?.done]);
 
   /* ── Check model status on mount ── */
@@ -313,17 +324,20 @@ export default function App() {
         {/* ═══════ HEADER ═══════ */}
         <header className="glass-panel mx-2 mt-1.5 px-4 py-1.5 flex justify-between items-center z-10 shrink-0">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-black tracking-[-0.02em] uppercase text-text">
-              AERO-TACTICAL
-            </span>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-cyan animate-pulse" style={{ boxShadow: '0 0 8px rgba(0,246,255,0.6)' }} />
+              <span className="text-sm font-black tracking-[0.04em] uppercase text-text">
+                MAHORAGA
+              </span>
+            </div>
             <span className="text-[9px] text-muted tracking-wide hidden sm:inline">
-              Mahoraga Adaptation Engine
+              Adaptive Combat AI • RL + LLM Engine
             </span>
           </div>
           <div className="flex items-center gap-2">
             {autoPlay && (
               <span className="text-[8px] font-bold tracking-widest uppercase text-amber animate-pulse">
-                ● LLM AUTO
+                ● AUTO-PLAY
               </span>
             )}
             <span className={`text-[8px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
@@ -351,52 +365,28 @@ export default function App() {
         {/* ═══════ MAIN BENTO GRID ═══════ */}
         <div className="flex-1 grid grid-cols-12 gap-2 px-2 py-1.5 min-h-0 overflow-hidden">
 
-          {/* ── COL 1-5: Left Column (Enemy + Mahoraga stacked) ── */}
+          {/* ── COL 1-5: Left Column (Boss + Player stacked) ── */}
           <div className="col-span-5 flex flex-col gap-2 min-h-0">
 
-            {/* Target Status: Enemy */}
-            <div className="glass-panel p-3 shrink-0">
+            {/* Boss: Mahoraga (LLM-powered adaptive enemy) */}
+            <div className="glass-panel p-3 shrink-0 border-l-2 border-l-red/30">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline text-base">target</span>
-                  <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-red/70">
-                    TARGET STATUS
+                  <span className="material-symbols-outlined text-red/60 text-base">smart_toy</span>
+                  <span className="text-[11px] font-black tracking-[0.08em] uppercase text-text">
+                    MAHORAGA
+                  </span>
+                  <span className="text-[7px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-red/10 text-red/60 border border-red/15">
+                    LLM BOSS
                   </span>
                 </div>
-                <span className="font-mono text-[9px] text-muted">ID: E-9942</span>
+                <span className="text-[8px] font-mono text-muted/50">
+                  {state.llm_raw ? 'AI THINKING...' : 'AWAITING'}
+                </span>
               </div>
-              <HpBar current={state.enemy_hp} max={state.enemy_hp_max} color="red" label="Structural Integrity" />
+              <HpBar current={state.mahoraga_hp} max={state.mahoraga_hp_max} color="red" label="Boss Integrity" />
               <div className="flex gap-1.5 mt-2">
-                <StatChip
-                  label="Threat"
-                  value={state.enemy_hp < 400 ? "CRIT" : state.enemy_hp < 700 ? "HIGH" : "NOM"}
-                  color={state.enemy_hp < 400 ? "text-red" : state.enemy_hp < 700 ? "text-amber" : "text-cyan"}
-                />
-                <StatChip
-                  label="Phase"
-                  value={state.turn_number <= 5 ? "I" : state.turn_number <= 15 ? "II" : "III"}
-                />
-                <StatChip
-                  label="Distance"
-                  value="14.2m"
-                  color="text-muted"
-                />
-              </div>
-            </div>
-
-            {/* Core: Mahoraga */}
-            <div className="glass-panel p-3 shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline text-base">memory</span>
-                  <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-green/70">
-                    CORE: MAHORAGA
-                  </span>
-                </div>
-              </div>
-              <HpBar current={state.mahoraga_hp} max={state.mahoraga_hp_max} color="green" label="System Integrity" />
-              <div className="flex gap-1.5 mt-2">
-                <StatChip label="Stack" value={
+                <StatChip label="Adapt Stack" value={
                   <motion.span key={state.adaptation_stack} initial={{ scale: 1.5 }} animate={{ scale: 1 }}>
                     {state.adaptation_stack}
                   </motion.span>
@@ -406,22 +396,43 @@ export default function App() {
                   value={state.heal_cooldown === 0 ? "RDY" : state.heal_cooldown}
                   color={state.heal_cooldown === 0 ? "text-green" : "text-red"}
                 />
-                <StatChip label="Adapt Rate" value="+2.4%/s" color="text-cyan" />
+                <StatChip
+                  label="Threat"
+                  value={state.adaptation_stack >= 3 ? "MAX" : state.adaptation_stack >= 2 ? "HIGH" : "LOW"}
+                  color={state.adaptation_stack >= 3 ? "text-red" : state.adaptation_stack >= 2 ? "text-amber" : "text-green"}
+                />
               </div>
             </div>
 
+            {/* Player Status (user-controlled, compact) */}
+            <div className="glass-panel p-2.5 shrink-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-green/60 text-sm">person</span>
+                  <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-green/70">
+                    CHALLENGER
+                  </span>
+                  <span className="text-[7px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-green/10 text-green/60 border border-green/15">
+                    YOU
+                  </span>
+                </div>
+                <span className="font-mono text-[8px] text-muted/40">{difficulty.toUpperCase()} MODE</span>
+              </div>
+              <HpBar current={state.enemy_hp} max={state.enemy_hp_max} color="green" label="Your HP" />
+            </div>
+
             {/* Resistances */}
-            <div className="glass-panel p-3 flex-1 min-h-0 flex flex-col">
+            <div className="glass-panel p-3 flex-1 min-h-0 flex flex-col border-l-2 border-l-cyan/20">
               <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-outline text-base">security</span>
+                <span className="material-symbols-outlined text-cyan/60 text-base">security</span>
                 <span className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted">
-                  ACTIVE RESISTANCES
+                  MAHORAGA RESISTANCES
                 </span>
               </div>
               <div className="space-y-1.5">
-                <ResBar label="Physical" icon="fitness_center" value={state.resistances.Physical} flashing={flashRes === "Physical"} />
-                <ResBar label="CE" icon="bolt" value={state.resistances.CE} flashing={flashRes === "CE"} />
-                <ResBar label="Technique" icon="precision_manufacturing" value={state.resistances.Technique} flashing={flashRes === "Technique"} />
+                <ResBar label="Physical" icon="fitness_center" value={state.resistances?.Physical ?? 0} flashing={flashRes === "Physical"} />
+                <ResBar label="Cursed Energy" icon="bolt" value={state.resistances?.CE ?? 0} flashing={flashRes === "CE"} />
+                <ResBar label="Technique" icon="precision_manufacturing" value={state.resistances?.Technique ?? 0} flashing={flashRes === "Technique"} />
               </div>
             </div>
           </div>
@@ -429,10 +440,10 @@ export default function App() {
           {/* ── COL 6-8: Center Column (Wheel + Phase + Tactics) ── */}
           <div className="col-span-3 flex flex-col gap-2 min-h-0">
 
-            {/* Enemy Phase Indicator */}
-            <div className="glass-panel p-3 shrink-0">
+            {/* Boss AI Phase */}
+            <div className="glass-panel p-3 shrink-0 border-l-2 border-l-cyan/20">
               <div className="text-[8px] font-bold tracking-[0.2em] uppercase text-muted/50 mb-1.5">
-                ENEMY PHASE
+                BOSS AI INTELLIGENCE PHASE
               </div>
               <div className="flex gap-1">
                 {[
@@ -502,7 +513,7 @@ export default function App() {
 
             {/* Tactical Summary */}
             <div className="glass-panel p-2.5 shrink-0">
-              <div className="text-[7px] font-bold tracking-[0.15em] uppercase text-muted/40 mb-1">LAST INCOMING</div>
+              <div className="text-[7px] font-bold tracking-[0.15em] uppercase text-muted/40 mb-1">YOUR LAST ATTACK</div>
               {lastLog ? (
                 <div className="flex items-center gap-2">
                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${catColor(lastLog.enemy_attack_type).bg} ${catColor(lastLog.enemy_attack_type).text} border ${catColor(lastLog.enemy_attack_type).border}`}>
@@ -528,13 +539,13 @@ export default function App() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-cyan text-sm">published_with_changes</span>
-                    <span className="text-[9px] font-bold tracking-[0.1em] uppercase text-cyan">ADAPTED</span>
+                    <span className="text-[9px] font-bold tracking-[0.1em] uppercase text-cyan">MAHORAGA ADAPTED</span>
                   </div>
                   <div className="text-xs font-black uppercase text-text mt-0.5">
-                    {lastLog.enemy_attack_type} COUNTERED
+                    YOUR {lastLog.enemy_attack_type} WAS COUNTERED
                   </div>
                   <div className="text-[9px] text-muted mt-0.5">
-                    Defensive parameters updated.
+                    Boss adapted to your attack type.
                   </div>
                 </motion.div>
               ) : lastLog ? (
@@ -548,12 +559,12 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-muted text-sm">sync_problem</span>
                     <span className="text-[9px] font-bold tracking-[0.1em] uppercase text-muted">
-                      {lastLog.mahoraga_action}
+                      MAHORAGA: {lastLog.mahoraga_action}
                     </span>
                   </div>
                   <div className="text-[10px] text-muted/60 mt-0.5 font-mono">
-                    DMG: <span className="text-red">{lastLog.damage_taken}</span> taken
-                    · <span className="text-green">{lastLog.damage_dealt}</span> dealt
+                    You dealt: <span className="text-green">{lastLog.damage_taken}</span>
+                    · Boss dealt: <span className="text-red">{lastLog.damage_dealt}</span>
                   </div>
                 </motion.div>
               ) : (
@@ -596,37 +607,36 @@ export default function App() {
                       key={i}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="flex gap-2 items-start py-1.5 border-b border-outline-variant/15 last:border-0"
+                      className="py-1.5 border-b border-outline-variant/15 last:border-0"
                     >
-                      <span className="font-mono text-[9px] text-outline-variant shrink-0 mt-0.5 w-6">
-                        T{l.turn}
-                      </span>
-                      {/* Category color dot */}
-                      <div className="shrink-0 mt-1.5" style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: catColor(l.enemy_attack_type).hex }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          {l.correct_adaptation && (
-                            <span className="material-symbols-outlined text-cyan text-[11px]">
-                              published_with_changes
-                            </span>
-                          )}
-                          <span className={`text-[9px] font-bold tracking-wider uppercase ${l.correct_adaptation ? "text-cyan" : "text-muted/60"}`}>
-                            {l.correct_adaptation ? "ADAPTATION" : l.mahoraga_action}
-                          </span>
-                        </div>
-                        <div className="font-mono text-[9px] text-muted/70 mt-0.5">
-                          <span className={catColor(l.enemy_attack_type).text}>{l.enemy_subtype}</span>
-                          <span className="text-muted/30"> → </span>
-                          <span className="text-text/80">{l.mahoraga_action}</span>
-                          <span className="text-muted/30"> | </span>
-                          <span className="text-amber">{l.damage_dealt}d</span>
-                          <span className="text-muted/30"> · </span>
-                          <span className="text-red/70">{l.damage_taken}t</span>
-                        </div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="font-mono text-[9px] text-outline-variant shrink-0 w-6">T{l.turn}</span>
+                        <div className="shrink-0" style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: catColor(l.enemy_attack_type).hex }} />
+                        {l.correct_adaptation && (
+                          <span className="material-symbols-outlined text-cyan text-[11px]">published_with_changes</span>
+                        )}
+                        <span className={`font-mono text-[9px] font-bold shrink-0 ml-auto ${l.reward > 0 ? "text-green" : "text-red/60"}`}>
+                          {l.reward > 0 ? "+" : ""}{l.reward}
+                        </span>
                       </div>
-                      <span className={`font-mono text-[9px] font-bold shrink-0 ${l.reward > 0 ? "text-green" : "text-red/60"}`}>
-                        {l.reward > 0 ? "+" : ""}{l.reward}
-                      </span>
+                      {/* Player action line */}
+                      <div className="flex items-center gap-1.5 ml-7 mb-0.5">
+                        <span className="text-[8px] font-bold tracking-wider uppercase text-green/80 w-8">YOU</span>
+                        <span className="text-[9px] text-muted/40">→</span>
+                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${catColor(l.enemy_attack_type).bg} ${catColor(l.enemy_attack_type).text} border ${catColor(l.enemy_attack_type).border}`}>
+                          {l.enemy_attack_type}
+                        </span>
+                        <span className="font-mono text-[8px] text-muted/50">{l.enemy_subtype}</span>
+                        <span className="font-mono text-[9px] text-green ml-auto">-{l.damage_taken} to boss</span>
+                      </div>
+                      {/* Mahoraga response line */}
+                      <div className="flex items-center gap-1.5 ml-7">
+                        <span className="text-[8px] font-bold tracking-wider uppercase text-red/80 w-8">BOSS</span>
+                        <span className="text-[9px] text-muted/40">→</span>
+                        <span className="text-[9px] font-bold text-text/80">{l.mahoraga_action}</span>
+                        {l.correct_adaptation && <span className="text-[8px] text-cyan font-bold">ADAPTED!</span>}
+                        {l.damage_dealt > 0 && <span className="font-mono text-[9px] text-red ml-auto">-{l.damage_dealt} to you</span>}
+                      </div>
                     </motion.div>
                   ))
                 )}
@@ -657,13 +667,10 @@ export default function App() {
 
           <div className="w-px h-5 bg-outline-variant/20 mx-0.5" />
 
-          {/* Manual actions */}
-          <Btn label="Adapt Physical" onClick={() => doStep(0)} disabled={done || autoPlay} />
-          <Btn label="Adapt CE" onClick={() => doStep(1)} disabled={done || autoPlay} />
-          <Btn label="Adapt Technique" onClick={() => doStep(2)} disabled={done || autoPlay} />
-          <div className="w-px h-5 bg-outline-variant/20 mx-0.5" />
-          <Btn label="Judgment Strike" onClick={() => doStep(3)} variant="danger" disabled={done || autoPlay} />
-          <Btn label="Regeneration" onClick={() => doStep(4)} variant="primary" disabled={done || autoPlay} />
+          {/* Manual player attacks */}
+          <Btn label="⚔ Physical" onClick={() => doStep("PHYSICAL")} disabled={done || autoPlay} />
+          <Btn label="⚔ Cursed Energy" onClick={() => doStep("CE")} disabled={done || autoPlay} />
+          <Btn label="⚔ Technique" onClick={() => doStep("TECHNIQUE")} disabled={done || autoPlay} />
           <div className="w-px h-5 bg-outline-variant/20 mx-0.5" />
 
           {/* Auto-play + Reset */}
@@ -677,7 +684,7 @@ export default function App() {
                 : "bg-surface/60 text-muted border-outline-variant/30 hover:text-cyan hover:border-cyan/30"
             }`}
           >
-            {autoPlay ? "⏸ STOP" : "▶ LLM AUTO"}
+            {autoPlay ? "⏸ STOP AUTO" : "▶ AUTO-PLAY"}
           </motion.button>
           <Btn label="Reset" onClick={() => doReset()} variant="reset" />
 
@@ -714,7 +721,7 @@ export default function App() {
                 </div>
                 <div className="text-sm text-muted mb-1">{state.done_reason}</div>
                 <div className="font-mono text-[10px] text-muted mb-5">
-                  Enemy: {state.enemy_hp} HP | Mahoraga: {state.mahoraga_hp} HP | T{state.turn_number}
+                  You: {state.enemy_hp} HP | Mahoraga (Boss): {state.mahoraga_hp} HP | T{state.turn_number}
                 </div>
                 <Btn label="Deploy Again" onClick={doReset} variant="primary" />
               </motion.div>

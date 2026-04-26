@@ -52,7 +52,7 @@ class MahoragaEnv:
             attack_history=list(self.attack_history)
         )
 
-    def step(self, action):
+    def step(self, action, enemy_category_override=None):
         validate_action(action)
         self.turn_number += 1
 
@@ -67,13 +67,27 @@ class MahoragaEnv:
             action = None  # Nullify action — agent wastes turn
 
         # 1. Enemy attacks first
-        attack = self.enemy.get_attack(
-            turn_number=self.turn_number,
-            resistances=self.resistances
-        )
-        category = attack["category"]
-        subtype = attack["subtype"]
-        ignore_armor = attack["ignore_armor"]
+        if enemy_category_override:
+            import random
+            from utils.constants import SUBTYPES, BASE_DAMAGE
+            category = enemy_category_override.upper()
+            subtype = random.choice(SUBTYPES[category])
+            ignore_armor = (subtype == "PIERCE")
+            attack = {
+                "category": category,
+                "subtype": subtype,
+                "damage": BASE_DAMAGE[category],
+                "ignore_armor": ignore_armor
+            }
+            self.enemy.turn += 1  # Advance internal turn
+        else:
+            attack = self.enemy.get_attack(
+                turn_number=self.turn_number,
+                resistances=self.resistances
+            )
+            category = attack["category"]
+            subtype = attack["subtype"]
+            ignore_armor = attack["ignore_armor"]
 
         enemy_damage = compute_enemy_damage(category, self.resistances, ignore_armor=ignore_armor)
         self.agent_hp = max(0, self.agent_hp - enemy_damage)
