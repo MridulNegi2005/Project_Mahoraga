@@ -1,9 +1,9 @@
 # %% [markdown]
 # # Project Mahoraga — RL Training (v4: Curriculum Boss Fight)
-# Qwen 2.5 7B + LoRA + Adaptive Boss Environment
+# Qwen 2.5 3B + LoRA + Adaptive Boss Environment
 #
 # **v4 CHANGES**:
-# - Upgraded to Qwen 2.5 7B for stronger reasoning
+# - Using Qwen 2.5 3B for fast iteration on T4 GPU
 # - Curriculum training: Easy → Medium → Hard with confidence gates
 # - Auto-resume from latest Drive checkpoint
 # - Clean logging (results every N iterations)
