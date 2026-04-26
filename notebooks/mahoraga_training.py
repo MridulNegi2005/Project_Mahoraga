@@ -103,7 +103,7 @@ def find_latest_checkpoint():
 
 RESUME_PATH, RESUME_NAME = find_latest_checkpoint()
 
-# %% CELL 5 — Load model (Qwen 2.5 7B + LoRA)
+# %% CELL 5 — Load model (Qwen 2.5 3B + LoRA)
 from unsloth import FastLanguageModel
 import torch
 
@@ -116,9 +116,9 @@ if RESUME_PATH:
         load_in_4bit=True,
     )
 else:
-    print("🆕 Loading base model: Qwen 2.5 7B")
+    print("🆕 Loading base model: Qwen 2.5 3B")
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name="unsloth/Qwen2.5-7B-Instruct",
+        model_name="unsloth/Qwen2.5-3B-Instruct",
         max_seq_length=512,
         dtype=None,
         load_in_4bit=True,
