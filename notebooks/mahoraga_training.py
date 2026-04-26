@@ -507,9 +507,12 @@ for difficulty in ["easy", "medium", "hard"]:
     # Generate expert trajectories for this difficulty
     expert_trajs = generate_expert_trajectories(difficulty, num=6)
     consecutive_confident = 0
-    difficulty_iter = 0
+    
+    # Calculate how many iterations we already did for this difficulty
+    difficulty_iter = sum(1 for s in all_stats if s["difficulty"] == difficulty)
+    remaining_iters = max(1, MAX_ITERS_PER_DIFFICULTY - difficulty_iter)
 
-    for local_iter in range(MAX_ITERS_PER_DIFFICULTY):
+    for local_iter in range(remaining_iters):
         total_iters += 1
         difficulty_iter += 1
 
