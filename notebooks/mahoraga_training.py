@@ -560,7 +560,7 @@ for difficulty in ["easy", "medium", "hard"]:
                 tokenizer=tokenizer,
                 train_dataset=train_dataset,
                 args=SFTConfig(
-                    output_dir=os.path.join(CHECKPOINT_DIR, f"iter_{total_iters}"),
+                    output_dir="/tmp/mahoraga_trainer_output",
                     per_device_train_batch_size=4,
                     gradient_accumulation_steps=2,
                     num_train_epochs=1,
