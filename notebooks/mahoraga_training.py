@@ -85,9 +85,9 @@ def find_latest_checkpoint():
 
     # Priority 2: iteration checkpoints (latest by number)
     pattern = os.path.join(CHECKPOINT_DIR, "iter_*")
-    checkpoints = sorted(glob.glob(pattern))
+    checkpoints = [p for p in glob.glob(pattern) if os.path.exists(os.path.join(p, "adapter_config.json"))]
     if checkpoints:
-        latest = checkpoints[-1]
+        latest = sorted(checkpoints, key=lambda x: int(os.path.basename(x).split('_')[1]))[-1]
         name = os.path.basename(latest)
         print(f"📂 Found iteration checkpoint: {name}")
         return latest, name
