@@ -1,173 +1,353 @@
+"""
+MahoragaEnv (v2: Boss Redesign)
+
+The RL agent is the PLAYER (sorcerer) fighting against Mahoraga (boss).
+
+Turn flow:
+    1. Player chooses action (0-4)
+    2. Player's action resolves (attack / domain / heal)
+    3. Mahoraga passively adapts (if hit with same type enough)
+    4. Mahoraga attacks the player
+    5. Check termination
+"""
+import random
 from env.state import build_state_dict
-from env.enemy import CurriculumEnemy
-from env.mechanics import (
-    new_resistances, apply_action_effects, compute_enemy_damage,
-    check_correct_adaptation
-)
+from env.mahoraga_boss import MahoragaBoss
 from env.rewards import compute_rewards
-from utils.constants import MAX_HP, ENEMY_HP, MAX_TURNS, HEAL_COOLDOWN, ACTION_TO_TYPE
+from utils.constants import (
+    PLAYER_HP, MAHORAGA_HP, MAX_TURNS, HEAL_COOLDOWN,
+    ACTION_TO_TYPE, DOMAIN_DURATION, DOMAIN_POST_RESISTANCE_BOOST,
+    SUBTYPES, DIFFICULTY_CONFIG,
+)
 from utils.validators import validate_action
 
 
+ACTION_NAMES = {
+    0: "Physical Strike",
+    1: "CE Blast",
+    2: "Technique Strike",
+    3: "Domain Expansion",
+    4: "Reversed Cursed Technique",
+    None: "Wasted Turn",
+}
+
+
 class MahoragaEnv:
+    """RL environment: Player vs Mahoraga (adaptive boss).
+
+    Actions (Player):
+        0: Physical Strike — deal PHYSICAL damage
+        1: CE Blast — deal CE damage (15% Black Flash chance)
+        2: Technique Strike — deal TECHNIQUE damage (highest base)
+        3: Domain Expansion — reset boss resistances, +50% dmg for 3 turns (once)
+        4: Reversed Cursed Technique — heal 250 HP (4-turn cooldown)
+    """
+
     def __init__(self, debug=False, difficulty="hard", enemy=None):
-        self.max_hp = MAX_HP
-        self.enemy_max_hp = ENEMY_HP
-        self.max_turns = MAX_TURNS
-        self.difficulty = difficulty
-        # Custom enemy overrides difficulty-based CurriculumEnemy
-        if enemy is not None:
-            self._enemy_factory = lambda: enemy.__class__(difficulty=enemy.difficulty)
-            self.enemy = enemy
-        else:
-            self._enemy_factory = lambda: CurriculumEnemy(difficulty=self.difficulty)
-            self.enemy = CurriculumEnemy(difficulty=difficulty)
+        self.difficulty = difficulty.lower()
         self.debug = debug
+        self.max_turns = MAX_TURNS
+
+        # Boss setup
+        config = DIFFICULTY_CONFIG.get(self.difficulty, DIFFICULTY_CONFIG["hard"])
+        self.boss_max_hp = config["boss_hp"]
+        self.player_max_hp = PLAYER_HP
+
+        # Legacy compat
+        self.max_hp = PLAYER_HP
+        self.enemy_max_hp = self.boss_max_hp
+
         self.reset()
 
     def reset(self):
-        self.agent_hp = self.max_hp
-        self.enemy_hp = self.enemy_max_hp
-        self.resistances = new_resistances()
+        """Reset for new episode."""
+        self.player_hp = self.player_max_hp
+        self.boss = MahoragaBoss(difficulty=self.difficulty)
+        self.turn_number = 0
+
+        # Player state
+        self.crit_stack = 0
+        self.domain_active = False
+        self.domain_turns_left = 0
+        self.domain_used = False
+        self.heal_cooldown_counter = 0
+        self.last_player_action = None
+        self.last_category = None
+        self.consecutive_same = 0
+        self.attack_history = []
+
+        # Boss attack tracking
+        self.last_boss_attack_name = None
+        self.last_boss_attack_damage = 0
+
+        # Legacy compat
+        self.agent_hp = self.player_hp
+        self.enemy_hp = self.boss.hp
+        self.resistances = {"PHYSICAL": 0, "CE": 0, "TECHNIQUE": 0}
         self.adaptation_stack = 0
         self.last_action = None
         self.last_adapted_category = None
         self.last_enemy_attack_type = None
         self.last_enemy_subtype = None
-        self.turn_number = 0
-        self.heal_cooldown_counter = 0
-        self.attack_history = []
-        self.enemy = self._enemy_factory()
+        self.enemy = self.boss  # Legacy alias
+
         return self._get_state()
 
     def _get_state(self):
         return build_state_dict(
-            self.agent_hp,
-            self.enemy_hp,
-            self.resistances,
-            self.last_enemy_attack_type,
-            self.last_enemy_subtype,
-            self.last_action,
-            self.turn_number,
-            attack_history=list(self.attack_history)
+            player_hp=self.player_hp,
+            boss_hp=self.boss.hp,
+            boss_resistances=self.boss.resistances,
+            boss_wheel_turns=self.boss.total_wheel_turns,
+            last_boss_attack_name=self.last_boss_attack_name,
+            last_player_action=self.last_player_action,
+            turn_number=self.turn_number,
+            crit_stack=self.crit_stack,
+            domain_active=self.domain_active,
+            domain_turns_left=self.domain_turns_left,
+            domain_used=self.domain_used,
+            heal_cooldown=self.heal_cooldown_counter,
+            last_category=self.last_category,
+            consecutive_same=self.consecutive_same,
+            attack_history=list(self.attack_history),
+            last_enemy_attack_type=self.last_boss_attack_name,
+            last_enemy_subtype=None,
         )
 
     def step(self, action):
+        """Execute one turn of combat.
+
+        Flow: Player acts → Boss adapts → Boss attacks → Check done
+        """
         validate_action(action)
         self.turn_number += 1
 
-        # Decrement heal cooldown at start of turn
+        # ── 0. Tick cooldowns ──
         if self.heal_cooldown_counter > 0:
             self.heal_cooldown_counter -= 1
 
-        # Check heal cooldown — if on cooldown, safely ignore and flag
+        domain_ended = self.boss.tick_domain()
+        if domain_ended:
+            self.boss.apply_domain_end(DOMAIN_POST_RESISTANCE_BOOST)
+            self.domain_active = False
+            self.domain_turns_left = 0
+
+        if self.domain_turns_left > 0:
+            self.domain_turns_left -= 1
+            if self.domain_turns_left <= 0:
+                self.domain_active = False
+
+        # ── 1. Player acts ──
         heal_on_cooldown = False
-        if action == 4 and self.heal_cooldown_counter > 0:
-            heal_on_cooldown = True
-            action = None  # Nullify action — agent wastes turn
-
-        # 1. Enemy attacks first
-        attack = self.enemy.get_attack(
-            turn_number=self.turn_number,
-            resistances=self.resistances
-        )
-        category = attack["category"]
-        subtype = attack["subtype"]
-        ignore_armor = attack["ignore_armor"]
-
-        enemy_damage = compute_enemy_damage(category, self.resistances, ignore_armor=ignore_armor)
-        self.agent_hp = max(0, self.agent_hp - enemy_damage)
-        self.last_enemy_attack_type = category
-        self.last_enemy_subtype = subtype
-
-        # Track attack history (last 4 attacks, oldest first)
-        self.attack_history.append(category)
-        if len(self.attack_history) > 4:
-            self.attack_history.pop(0)
-
-        # Check early death from enemy attack
-        if self.agent_hp <= 0:
-            self.last_action = action
-            info = {
-                "reason": "Agent defeated",
-                "damage_taken": enemy_damage,
-                "damage_dealt": 0,
-                "correct_adaptation": False,
-                "adaptation_stack": self.adaptation_stack,
-                "heal_on_cooldown": heal_on_cooldown
-            }
-            state = self._get_state()
-            reward_dict = compute_rewards(info, state, action, True)
-            info["reward_breakdown"] = reward_dict
-            total_reward = sum(reward_dict.values())
-            if self.debug:
-                print(f"[DEBUG] INFO: {info}")
-                print(f"[DEBUG] REWARD: {reward_dict} = {total_reward:.2f}")
-            return state, total_reward, True, info
-
-        # 2. Mahoraga observes and takes action
-        correct_adaptation = False
-        if action is not None:
-            correct_adaptation = check_correct_adaptation(action, category)
-            if correct_adaptation:
-                self.adaptation_stack += 1
-
-            # Track last adapted category for Judgment Strike logic
-            if action in ACTION_TO_TYPE:
-                self.last_adapted_category = ACTION_TO_TYPE[action]
-
-        # 3. Apply agent action effects
         damage_dealt = 0
-        if action is not None:
-            enemy_hp_before = self.enemy_hp
-            self.agent_hp, self.enemy_hp, self.resistances, self.adaptation_stack = (
-                apply_action_effects(
-                    action, self.agent_hp, self.enemy_hp,
-                    self.resistances, self.adaptation_stack,
-                    enemy_category=category,
-                    last_adapted_category=self.last_adapted_category
-                )
+        black_flash = False
+        is_crit = False
+        adapted = False
+        adapt_category = None
+        domain_activated = False
+        healed = 0
+        action_name = "Unknown"
+        category = None
+        subtype = None
+
+        if action in ACTION_TO_TYPE:
+            # ATTACK
+            category = ACTION_TO_TYPE[action]
+            subtype = random.choice(SUBTYPES[category])
+
+            # Compute damage
+            from env.mechanics import compute_player_damage
+            dmg_result = compute_player_damage(
+                category, self.boss.resistances, subtype=subtype,
+                crit_stack=self.crit_stack, domain_active=self.domain_active
             )
-            damage_dealt = max(0, enemy_hp_before - self.enemy_hp)
+            damage_dealt = dmg_result["damage"]
+            black_flash = dmg_result["black_flash"]
+            is_crit = dmg_result["crit"]
 
-            # Set heal cooldown if heal was used
-            if action == 4:
+            # Apply damage to boss
+            self.boss.hp = max(0, self.boss.hp - damage_dealt)
+
+            # Boss passive adaptation
+            adapt_info = self.boss.receive_hit(category)
+            adapted = adapt_info["adapted"]
+            adapt_category = adapt_info["category"] if adapted else None
+
+            # Black Flash effect
+            if black_flash:
+                from utils.constants import BLACK_FLASH_RESISTANCE_REDUCTION
+                self.boss.reduce_resistance(category, BLACK_FLASH_RESISTANCE_REDUCTION)
+
+            # Crit stack tracking
+            if category == self.last_category:
+                self.consecutive_same += 1
+            else:
+                self.consecutive_same = 1
+
+            # Update crit stack
+            if category == self.last_category:
+                self.crit_stack += 1
+            else:
+                self.crit_stack = 1
+
+            # If crit was used, reset stack
+            if is_crit:
+                self.crit_stack = 0
+
+            self.last_category = category
+            action_name = f"{category} Strike"
+
+            # Track attack history
+            self.attack_history.append(category)
+            if len(self.attack_history) > 4:
+                self.attack_history.pop(0)
+
+        elif action == 3:
+            # DOMAIN EXPANSION
+            if self.domain_used:
+                action_name = "Domain (WASTED)"
+            else:
+                self.boss.apply_domain_start(DOMAIN_DURATION)
+                self.domain_active = True
+                self.domain_turns_left = DOMAIN_DURATION
+                self.domain_used = True
+                self.crit_stack = 0
+                domain_activated = True
+                action_name = "DOMAIN EXPANSION"
+
+        elif action == 4:
+            # REVERSED CURSED TECHNIQUE (heal)
+            if self.heal_cooldown_counter > 0:
+                heal_on_cooldown = True
+                action_name = "Heal (BLOCKED)"
+            else:
+                from utils.constants import HEAL_AMOUNT
+                heal = min(HEAL_AMOUNT, self.player_max_hp - self.player_hp)
+                self.player_hp = min(self.player_max_hp, self.player_hp + heal)
                 self.heal_cooldown_counter = HEAL_COOLDOWN
+                healed = heal
+                action_name = "Reversed Cursed Technique"
 
-            # Reset last_adapted_category after Judgment Strike consumes it
-            if action == 3:
-                self.last_adapted_category = None
+        self.last_player_action = action
 
-        self.last_action = action
+        # ── 2. Check if boss died from player's attack ──
+        if self.boss.hp <= 0:
+            info = self._build_info(
+                damage_dealt=damage_dealt, damage_taken=0,
+                black_flash=black_flash, crit=is_crit,
+                adapted=adapted, adapt_category=adapt_category,
+                domain_activated=domain_activated, healed=healed,
+                heal_on_cooldown=heal_on_cooldown,
+                category=category, subtype=subtype,
+                boss_attack_name=None, boss_attack_damage=0,
+                action_name=action_name,
+                reason="Mahoraga defeated",
+            )
+            state = self._get_state()
+            self._update_legacy(action, category)
+            return self._finalize(state, info, done=True, action=action)
 
-        # 4. Check termination
+        # ── 3. Mahoraga attacks player ──
+        boss_attack = self.boss.choose_attack()
+        boss_damage = boss_attack["damage"]
+        self.player_hp = max(0, self.player_hp - boss_damage)
+        self.last_boss_attack_name = boss_attack["name"]
+        self.last_boss_attack_damage = boss_damage
+
+        # ── 4. Check termination ──
         done = False
-        info = {
-            "damage_taken": enemy_damage,
-            "damage_dealt": damage_dealt,
-            "correct_adaptation": correct_adaptation,
-            "adaptation_stack": self.adaptation_stack,
-            "heal_on_cooldown": heal_on_cooldown
-        }
-
-        if self.enemy_hp <= 0:
+        reason = None
+        if self.player_hp <= 0:
             done = True
-            info["reason"] = "Enemy defeated"
-        elif self.agent_hp <= 0:
-            done = True
-            info["reason"] = "Agent defeated"
+            reason = "Player defeated"
         elif self.turn_number >= self.max_turns:
             done = True
-            info["reason"] = "Turn limit reached"
+            reason = "Turn limit reached"
 
-        # 5. Compute rewards
+        info = self._build_info(
+            damage_dealt=damage_dealt, damage_taken=boss_damage,
+            black_flash=black_flash, crit=is_crit,
+            adapted=adapted, adapt_category=adapt_category,
+            domain_activated=domain_activated, healed=healed,
+            heal_on_cooldown=heal_on_cooldown,
+            category=category, subtype=subtype,
+            boss_attack_name=boss_attack["name"],
+            boss_attack_damage=boss_damage,
+            action_name=action_name,
+            reason=reason,
+        )
+
         state = self._get_state()
+        self._update_legacy(action, category)
+        return self._finalize(state, info, done=done, action=action)
+
+    def _build_info(self, damage_dealt, damage_taken, black_flash, crit,
+                    adapted, adapt_category, domain_activated, healed,
+                    heal_on_cooldown, category, subtype,
+                    boss_attack_name, boss_attack_damage, action_name,
+                    reason=None):
+        """Build the info dict for this step."""
+        info = {
+            # Damage
+            "damage_dealt": damage_dealt,
+            "damage_taken": damage_taken,
+
+            # Player attack info
+            "category": category,
+            "subtype": subtype,
+            "black_flash": black_flash,
+            "crit": crit,
+            "action_name": action_name,
+
+            # Boss adaptation
+            "adapted": adapted,
+            "adapt_category": adapt_category,
+            "boss_resistances": dict(self.boss.resistances),
+            "boss_wheel_turns": self.boss.total_wheel_turns,
+
+            # Boss attack
+            "boss_attack_name": boss_attack_name,
+            "boss_attack_damage": boss_attack_damage,
+
+            # Domain / heal
+            "domain_activated": domain_activated,
+            "domain_used_before": self.domain_used and not domain_activated,
+            "healed": healed,
+            "heal_on_cooldown": heal_on_cooldown,
+
+            # For rewards
+            "last_category": self.last_category,
+            "consecutive_same": self.consecutive_same,
+
+            # Legacy compat
+            "correct_adaptation": adapted,
+            "adaptation_stack": self.boss.total_wheel_turns,
+        }
+        if reason:
+            info["reason"] = reason
+        return info
+
+    def _finalize(self, state, info, done, action):
+        """Compute rewards and return."""
         reward_dict = compute_rewards(info, state, action, done)
         info["reward_breakdown"] = reward_dict
         total_reward = sum(reward_dict.values())
 
         if self.debug:
-            print(f"[DEBUG] Turn {self.turn_number} | Action: {action} | INFO: dmg_taken={info['damage_taken']}, dmg_dealt={info['damage_dealt']}, correct={info['correct_adaptation']}")
-            print(f"[DEBUG] REWARD: {reward_dict} = {total_reward:.2f}")
+            print(f"[T{self.turn_number}] Action: {info['action_name']} | "
+                  f"Dealt: {info['damage_dealt']} | Taken: {info['damage_taken']} | "
+                  f"BF: {info['black_flash']} | Adapted: {info['adapted']} | "
+                  f"Reward: {total_reward:.2f}")
 
         return state, total_reward, done, info
+
+    def _update_legacy(self, action, category):
+        """Update legacy fields for backward compat with API/frontend."""
+        self.agent_hp = self.player_hp
+        self.enemy_hp = self.boss.hp
+        self.last_action = action
+        self.last_enemy_attack_type = self.last_boss_attack_name
+        self.adaptation_stack = self.boss.total_wheel_turns
+        self.resistances = dict(self.boss.resistances)
+        if category:
+            self.last_adapted_category = category
