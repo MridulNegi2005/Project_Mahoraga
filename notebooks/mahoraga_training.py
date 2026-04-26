@@ -9,10 +9,24 @@
 # - Clean logging (results every N iterations)
 # - Frequent checkpoints to Google Drive
 
-# %% CELL 1 — Install dependencies
+# %% CELL 1 — Install dependencies + suppress warnings
+import os
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*max_new_tokens.*")
+warnings.filterwarnings("ignore", message=".*max_length.*")
+warnings.filterwarnings("ignore", message=".*attention mask.*")
+warnings.filterwarnings("ignore", message=".*use_return_dict.*")
+
 import subprocess
 subprocess.run(["pip", "install", "-q", "unsloth", "transformers", "accelerate",
                 "peft", "trl", "bitsandbytes", "datasets", "torch", "matplotlib"], check=True)
+
+import logging
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("transformers.generation").setLevel(logging.ERROR)
 
 # %% CELL 2 — Mount Google Drive and setup
 import os
@@ -58,13 +72,6 @@ state2, _, _, info2 = env.step(0)
 assert info2["adapted"], "Boss should adapt after 2 same-type hits!"
 
 print("✅ Environment v2 verified. Boss adapts passively.")
-
-# Suppress noisy HuggingFace warnings (max_new_tokens vs max_length spam)
-import transformers
-transformers.logging.set_verbosity_error()
-import warnings
-warnings.filterwarnings("ignore", message=".*max_new_tokens.*max_length.*")
-warnings.filterwarnings("ignore", message=".*Both.*max_new_tokens.*")
 
 # %% CELL 4 — Auto-resume: find latest checkpoint
 def find_latest_checkpoint():
