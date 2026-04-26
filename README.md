@@ -1,164 +1,166 @@
-# Project Mahoraga — Adaptive Boss Fight Engine
+---
+title: Project Mahoraga
+emoji: ⚔️
+colorFrom: red
+colorTo: gray
+sdk: docker
+app_port: 7860
+---
+# ⚔️ Project Mahoraga — Adaptation Engine
 
-An RL-based combat game inspired by Mahoraga from JJK. The player (sorcerer) fights an adaptive boss that passively gains resistance to repeated attack types. The RL agent must learn to vary attacks, time Domain Expansion, and manage resources to defeat the boss before it fully adapts.
+An RL-based combat AI that learns to fight like Mahoraga from JJK — observing enemy attack patterns, adapting its resistances in real-time, and executing devastating Judgment Strikes when stacks are built.
 
-**Trained on Qwen 2.5 3B (LoRA)** using reward-weighted SFT with curriculum difficulty (Easy -> Medium -> Hard).
+**Trained on Qwen 2.5 3B (LoRA)** using reward-weighted SFT with a custom curriculum-based enemy across 3 phases.
+
+![Aero-Tactical Dashboard](docs/dashboard_preview.png)
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Frontend Dashboard (Recommended)
 
 ```bash
 # Terminal 1: Start the API server
 python api.py
-# -> FastAPI on http://localhost:8000
+# → FastAPI on http://localhost:8000
 
 # Terminal 2: Start the React dashboard
 cd frontend
 npm install    # first time only
 npm run dev
-# -> Dashboard on http://localhost:5173
+# → Dashboard on http://localhost:5173
 ```
 
-### CLI Mode
+### Gradio UI (Lightweight Alternative)
 
 ```bash
-python main.py           # Single random episode
-python scripts/diagnose.py     # Strategy comparison
-python scripts/trace_medium.py # Step-by-step medium game
+python app.py
+# → Gradio on http://localhost:7860
 ```
 
 ---
 
-## How The Game Works
+## 🎮 Features
 
-### The Boss: Mahoraga
-
-Mahoraga is an **adaptive boss** that passively gains resistance to attack types the player repeats:
-
-- Every time the player hits with the same attack category N times (N = adapt threshold), **the wheel turns**
-- Each wheel turn increases resistance to that category by 25%
-- After enough wheel turns, Mahoraga unlocks **Cleave** (devastating burst attack)
-- Mahoraga can **self-heal once** when below 25% HP
-
-### The Player: Sorcerer (5 Actions)
-
-| Action | Name | Effect |
-|--------|------|--------|
-| 0 | Physical Strike | 130 base damage, reduced by Physical resistance |
-| 1 | CE Blast | 150 base damage, 15% chance for Black Flash (2.5x!) |
-| 2 | Technique Strike | 190 base damage, highest risk/reward |
-| 3 | Domain Expansion | ONCE per fight: resets all resistances, +75% damage for 3 turns |
-| 4 | Reversed Cursed Technique | Heal 250 HP, 4-turn cooldown |
-
-### Key Mechanics
-
-- **Attack Variety**: Repeating the same attack type lets Mahoraga adapt. Cycle between Physical, CE, and Technique
-- **Black Flash**: CE attacks have a 15% chance to deal 2.5x damage and reduce boss CE resistance
-- **Crit Stack**: 3 consecutive same-type hits deal 1.5x damage (risky — boss adapts faster)
-- **Domain Expansion**: Resets boss resistances and gives +75% damage for 3 turns. Timing is crucial
-- **Boss Scaling**: Each wheel turn makes Mahoraga's attacks stronger. After 4 turns, it unlocks Cleave (200 dmg)
+### Aero-Tactical Dashboard
+- **Viewport-locked bento-grid** layout — no scrolling, pure tactical overview
+- **Animated HP / Resistance bars** with spring physics (Framer Motion)
+- **Golden Mahoraga Wheel** — rotates 45° per adaptation, 180° on Judgment Strike
+- **Screen shake** on heavy hits, full-screen flash on Judgment Strike
+- **Combat log** with timeline-style entries and color-coded attack categories
 
 ### Difficulty Levels
 
-| Level | Boss HP | Adapt Threshold | Cleave At | Description |
-|-------|---------|----------------|-----------|-------------|
-| **Easy** | 1400 | 4 hits | 6 turns | Boss adapts slowly. Good for learning |
-| **Medium** | 1800 | 3 hits | 5 turns | Balanced. Strategy matters |
-| **Hard** | 2000 | 2 hits | 4 turns | Boss adapts fast. Requires real strategy |
+| Level | Enemy Behavior | Color |
+|-------|---------------|-------|
+| **EASY** | Always PHYSICAL attacks (Phase I only) | 🟢 Green |
+| **MEDIUM** | Cycling attacks, no adaptive targeting | 🟡 Amber |
+| **HARD** | Full 3-phase AI — targets your weakest resistance | 🔴 Red |
+
+### LLM Auto-Play
+
+Click **▶ LLM AUTO** to let the trained Qwen 2.5 3B model fight autonomously:
+- Model loads on first click (~30-60s, uses ~2.5GB VRAM)
+- Plays one turn every 1.2s with full animations
+- Falls back to a smart rule-based agent if GPU unavailable
+
+### Color-Coded Attack Categories
+
+| Category | Color | Subtypes |
+|----------|-------|----------|
+| **PHYSICAL** | 🟠 Orange | SLASH, IMPACT, PIERCE |
+| **CE** (Cursed Energy) | 🟣 Purple | BLAST, WAVE, BEAM |
+| **TECHNIQUE** | 🔵 Teal | SPIKE, DELAYED, PATTERN |
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
-meta_Mahoraga/
-├── api.py                  # FastAPI server (REST + LLM auto-play)
-├── main.py                 # CLI: run a single episode
-│
-├── env/                    # Core RL environment
-│   ├── mahoraga_env.py     # MahoragaEnv (player vs boss)
-│   ├── mahoraga_boss.py    # MahoragaBoss (adaptive boss logic)
-│   ├── mechanics.py        # Damage computation, crit, Black Flash
-│   ├── rewards.py          # 10-component reward system
-│   ├── state.py            # State dict builder
-│   ├── enemy.py            # Legacy CurriculumEnemy (for reference)
-│   └── gym_wrapper.py      # Gymnasium-compatible wrapper
-│
-├── utils/                  # Constants and validation
-│   ├── constants.py        # HP, damage, adaptation thresholds
+Mahoraga/
+├── api.py                  # FastAPI server (REST endpoints + LLM inference)
+├── app.py                  # Gradio UI (standalone alternative)
+├── env/
+│   ├── mahoraga_env.py     # Main RL environment (MahoragaEnv)
+│   ├── enemy.py            # 3-phase curriculum enemy (CurriculumEnemy)
+│   ├── mechanics.py        # Combat math (damage, resistances, judgment)
+│   └── rewards.py          # Reward functions (7 components)
+├── utils/
+│   ├── constants.py        # Game constants (HP, damage, categories)
 │   └── validators.py       # Action validation
-│
-├── frontend/               # React + Framer Motion dashboard
-│   ├── src/App.jsx         # Main UI component
-│   ├── src/index.css       # Design system
-│   └── vite.config.js      # Vite + API proxy
-│
-├── notebooks/              # Training pipeline
-│   ├── mahoraga_training.py    # Source (Colab, saves to Drive)
-│   └── mahoraga_training.ipynb # Notebook version
-│
-├── tests/                  # Test suite
-│   ├── test_env.py         # Core environment tests (73)
-│   └── test_gym_wrapper.py # Gym wrapper tests (33)
-│
-├── scripts/                # Diagnostic tools
-│   ├── diagnose.py         # Strategy comparison
-│   ├── trace_medium.py     # Step-by-step medium game trace
-│   └── random_agent_gym.py # Random agent baseline
-│
-└── requirements.txt        # Python dependencies
+├── frontend/               # React dashboard
+│   ├── src/App.jsx         # Main UI (727 lines)
+│   ├── src/index.css       # Design system (glass panels, animations)
+│   └── vite.config.js      # Vite + proxy to FastAPI
+├── mahoraga_loral_final/   # Trained LoRA weights (not in git)
+│   ├── adapter_config.json
+│   ├── adapter_model.safetensors
+│   └── tokenizer*.json
+└── notebooks/
+    └── mahoraga_training.py  # Kaggle training notebook
 ```
 
 ---
 
-## Reward System (10 Components)
+## 🧠 How The AI Works
 
-| Component | Signal | Purpose |
-|-----------|--------|---------|
-| Damage Dealt | `+damage / 80` | Encourage aggression |
-| Survival | `-damage_taken / 100` | Penalize taking hits |
-| Variety | `+0.5` for switching types | Slow boss adaptation |
-| Anti-Spam | `-0.8` for 3+ same type | Prevent spamming |
-| Domain Timing | `+2.0` if used at high res | Reward smart domain use |
-| Domain Waste | `-1.0` if reused | Prevent wasting domain |
-| Black Flash | `+1.5` on trigger | Reward CE attacks |
-| Wheel Turn | `-1.0` on boss adapt | Punish letting boss adapt |
-| Heal Waste | `-1.0` at high HP | Prevent unnecessary healing |
-| Terminal | `+12` win / `-10` loss | Strong end-of-episode signal |
+### Environment (MahoragaEnv)
 
----
+Turn-based combat where Mahoraga has 5 actions:
+- **0-2:** Adapt resistance (Physical / CE / Technique) — +40 to target, -20 to others
+- **3:** Judgment Strike — base 350 DMG + 50 per adaptation stack (resets stacks)
+- **4:** Regeneration — heal 300 HP (3-turn cooldown)
 
-## Training
+### Curriculum Enemy (3 Phases)
+
+| Phase | Turns | Behavior |
+|-------|-------|----------|
+| I — Tutorial | 1-5 | Always PHYSICAL |
+| II — Pattern | 6-15 | Cycles PHYSICAL → CE → TECHNIQUE (15% random deviation) |
+| III — Adaptive | 16+ | Targets the agent's **lowest resistance** |
+
+### Reward Signal (7 components)
+
+| Component | Signal |
+|-----------|--------|
+| Survival | `-damage_taken / 100` |
+| Combat | `+damage_dealt / 80` |
+| Adaptation | `+0.8` for correct match |
+| Anti-cowardice | `-1.0` for healing at high HP |
+| Efficiency | `+1.0` for burst damage ≥200 |
+| Terminal | `+10` win / `-8` loss |
+| Opportunity | `-0.5` for not attacking at stack ≥2 |
+
+### Training
 
 - **Model:** Qwen 2.5 3B Instruct (4-bit quantized via Unsloth)
-- **Method:** LoRA (r=16, alpha=16) targeting q/k/v/o projections
-- **Algorithm:** Reward-weighted SFT with curriculum difficulty
-- **Platform:** Google Colab (T4 GPU, saves to Drive)
-- **Curriculum:** Easy (60% win gate) -> Medium (40% win gate) -> Hard (30% win gate)
+- **Method:** LoRA (r=16, α=16) targeting q/k/v/o projections
+- **Algorithm:** Reward-weighted SFT with episode-level modifiers + expert trajectory seeding
+- **Platform:** Kaggle (T4 GPU)
 
 ---
 
-## API Reference
+## 🔌 API Reference
 
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
 | `POST` | `/api/reset` | `{ "difficulty": "easy"\|"medium"\|"hard" }` | Reset environment |
 | `POST` | `/api/step` | `{ "action": 0-4 }` | Execute one manual turn |
-| `POST` | `/api/auto-step` | -- | LLM picks the action |
-| `GET` | `/api/model-status` | -- | Check if LLM is loaded |
+| `POST` | `/api/auto-step` | — | LLM picks the action |
+| `GET` | `/api/model-status` | — | Check if LLM is loaded |
 
 ---
 
-## Dependencies
+## 📦 Dependencies
 
 ### Backend
 ```
-numpy gymnasium fastapi uvicorn pydantic  # Core
-torch transformers peft                   # LLM inference
-bitsandbytes accelerate unsloth          # 4-bit quantization
+fastapi uvicorn pydantic         # API server
+torch transformers peft          # LLM inference
+bitsandbytes accelerate          # 4-bit quantization
+unsloth                          # Optional: faster inference
+gradio                           # Alternative UI
 ```
 
 ### Frontend
@@ -170,10 +172,21 @@ vite                             # Build tool
 
 ---
 
-## Team
+## 🖥️ Hardware Requirements
 
-- **Atishay** (RL Backend, Training Pipeline) -- [GitHub](https://github.com/Atishay9828)
-- **Mridul** (Frontend Dashboard, FastAPI Bridge, UI/UX)
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| GPU (for LLM) | GTX 1650 (4GB) | RTX 3060 (12GB) |
+| RAM | 8 GB | 16 GB |
+| Storage | 500 MB (+ ~2GB model) | Same |
+
+> **No GPU?** The dashboard works fully in manual mode. Auto-play falls back to a rule-based agent.
+
+---
+
+## 👥 Team
+
+Built by **Atishay** — [GitHub](https://github.com/Atishay9828)
 
 ---
 

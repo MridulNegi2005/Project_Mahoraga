@@ -114,8 +114,7 @@ def test_reset_after_episode():
     # Reset and run again
     obs, info = env.reset()
     check("Reset after episode returns valid obs", env.observation_space.contains(obs))
-    from utils.constants import PLAYER_HP
-    check(f"Agent HP reset to max ({PLAYER_HP})", obs["agent_hp"][0] == PLAYER_HP)
+    check("Agent HP reset to max", obs["agent_hp"][0] == 1200)
     check("Turn number reset to 0", obs["turn_number"][0] == 0)
 
 

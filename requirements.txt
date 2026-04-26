@@ -1,19 +1,10 @@
-# Core environment
-numpy
-gymnasium
-
-# API (FastAPI backend)
 fastapi
-uvicorn[standard]
+uvicorn
 pydantic
-
-# Training (Colab/Kaggle)
-# unsloth
-# transformers
-# accelerate
-# peft
-# trl
-# bitsandbytes
-# datasets
-# torch
-# matplotlib
+torch
+transformers
+peft
+bitsandbytes
+accelerate
+gradio
+requests

@@ -1,209 +1,154 @@
 # %% [markdown]
-# # Project Mahoraga — RL Training (v4: Curriculum Boss Fight)
-# Qwen 2.5 3B + LoRA + Adaptive Boss Environment
+# # Project Mahoraga — RL-Based LLM Training Notebook (v3 — Colab)
+# Qwen 2.5 3B + LoRA + Custom RL Environment
 #
-# **v4 CHANGES**:
-# - Using Qwen 2.5 3B for fast iteration on T4 GPU
-# - Curriculum training: Easy → Medium → Hard with confidence gates
-# - Auto-resume from latest Drive checkpoint
-# - Clean logging (results every N iterations)
-# - Frequent checkpoints to Google Drive
+# **v3 CHANGES**: Migrated from Kaggle to Google Colab.
+# Models and checkpoints save to Google Drive.
+# Clones main branch (fully merged system).
 
-# %% CELL 1 — Install dependencies + suppress warnings
-import os
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", message=".*max_new_tokens.*")
-warnings.filterwarnings("ignore", message=".*max_length.*")
-warnings.filterwarnings("ignore", message=".*attention mask.*")
-warnings.filterwarnings("ignore", message=".*use_return_dict.*")
-
-import subprocess
-subprocess.run(["pip", "install", "-q", "unsloth", "transformers", "accelerate",
-                "peft", "trl", "bitsandbytes", "datasets", "torch", "matplotlib"], check=True)
-
-import unsloth
-
-import logging
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("transformers.generation").setLevel(logging.ERROR)
+# %% CELL 1 — Install dependencies
+!pip install -q unsloth transformers accelerate peft trl bitsandbytes datasets torch matplotlib
 
 # %% CELL 2 — Mount Google Drive and setup
 import os
 import sys
-import json
-import glob
-import time
-import random
-import shutil
 from google.colab import drive
 
+# Mount Drive — all checkpoints and models save here
 drive.mount('/content/drive')
 
 DRIVE_DIR = "/content/drive/MyDrive/Mahoraga"
-CHECKPOINT_DIR = os.path.join(DRIVE_DIR, "checkpoints")
-STATS_PATH = os.path.join(DRIVE_DIR, "training_stats.json")
-CURRICULUM_PATH = os.path.join(DRIVE_DIR, "curriculum_state.json")
-os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+os.makedirs(DRIVE_DIR, exist_ok=True)
+print(f"Drive mounted. Output dir: {DRIVE_DIR}")
 
-# Clone repo
-if not os.path.exists('/content/meta_Mahoraga'):
-    import subprocess
-    subprocess.run(["git", "clone", "--branch", "main",
-                    "https://github.com/Atishay9828/meta_Mahoraga.git",
-                    "/content/meta_Mahoraga"], check=True)
+# Clone repo into Colab runtime (fast, ephemeral storage)
+!git clone --branch main https://github.com/Atishay9828/meta_Mahoraga.git /content/meta_Mahoraga
+
 sys.path.insert(0, '/content/meta_Mahoraga')
 
-print(f"Drive dir: {DRIVE_DIR}")
+print("Repo cloned and path configured.")
 
-# %% CELL 3 — Import environment and verify
+# %% CELL 3 — Import environment and VERIFY reward signal
 from env.mahoraga_env import MahoragaEnv
 
-env = MahoragaEnv(debug=False)
+env = MahoragaEnv(debug=True)
 state = env.reset()
+print("Environment loaded successfully.")
+print(f"Initial state: Agent HP={state['agent_hp']}, Enemy HP={state['enemy_hp']}")
+
+# VERIFY: correct schema + non-zero reward + all info fields
 state, reward, done, info = env.step(0)
+print(f"\n--- REWARD VERIFICATION ---")
+print(f"Reward: {reward:.4f}")
+print(f"Breakdown: {info.get('reward_breakdown', 'MISSING!')}")
 
-assert reward != 0.0, "Reward is 0!"
-assert "reward_breakdown" in info, "reward_breakdown missing!"
-assert "damage_dealt" in info["reward_breakdown"], "damage_dealt missing!"
-assert "boss_resistances" in info, "boss_resistances missing!"
+assert reward != 0.0, "CRITICAL: Reward is 0.0!"
+assert "reward_breakdown" in info, "CRITICAL: reward_breakdown missing!"
+assert "opportunity" in info["reward_breakdown"], "CRITICAL: opportunity reward missing (old env?)"
 
-state2, _, _, info2 = env.step(0)
-assert info2["adapted"], "Boss should adapt after 2 same-type hits!"
+# VERIFY: schema uses 'category'
+from env.enemy import CurriculumEnemy
+e = CurriculumEnemy()
+a = e.get_attack(turn_number=1)
+assert "category" in a, "CRITICAL: schema uses 'type' not 'category'!"
+assert "ignore_armor" in a, "CRITICAL: missing ignore_armor field!"
+print("\n✅ All verification checks passed. Using latest env.")
 
-print("✅ Environment v2 verified. Boss adapts passively.")
-
-# %% CELL 4 — Auto-resume: find latest checkpoint
-def find_latest_checkpoint():
-    """Scan Drive for the most recent saved model checkpoint."""
-    # Priority 1: curriculum milestone models (easy_best, medium_best, etc.)
-    for name in ["hard_best", "medium_best", "easy_best"]:
-        path = os.path.join(CHECKPOINT_DIR, name)
-        if os.path.exists(path) and os.path.isdir(path):
-            print(f"📂 Found milestone checkpoint: {name}")
-            return path, name
-
-    # Priority 2: iteration checkpoints (latest by number)
-    pattern = os.path.join(CHECKPOINT_DIR, "iter_*")
-    checkpoints = [p for p in glob.glob(pattern) if os.path.exists(os.path.join(p, "adapter_config.json"))]
-    if checkpoints:
-        latest = sorted(checkpoints, key=lambda x: int(os.path.basename(x).split('_')[1]))[-1]
-        name = os.path.basename(latest)
-        print(f"📂 Found iteration checkpoint: {name}")
-        return latest, name
-
-    # Priority 3: final model from previous run
-    final_path = os.path.join(DRIVE_DIR, "mahoraga_lora_final")
-    if os.path.exists(final_path):
-        print(f"📂 Found final model from previous run")
-        return final_path, "lora_final"
-
-    print("🆕 No checkpoint found. Starting fresh.")
-    return None, None
-
-RESUME_PATH, RESUME_NAME = find_latest_checkpoint()
-
-# %% CELL 5 — Load model (Qwen 2.5 3B + LoRA)
+# %% CELL 4 — Load model (Unsloth + Qwen 2.5 3B)
 from unsloth import FastLanguageModel
 import torch
 
-if RESUME_PATH:
-    print(f"🔄 Resuming from: {RESUME_NAME}")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=RESUME_PATH,
-        max_seq_length=512,
-        dtype=None,
-        load_in_4bit=True,
-    )
-else:
-    print("🆕 Loading base model: Qwen 2.5 3B")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name="unsloth/Qwen2.5-3B-Instruct",
-        max_seq_length=512,
-        dtype=None,
-        load_in_4bit=True,
-    )
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/Qwen2.5-3B-Instruct",
+    max_seq_length=512,
+    dtype=None,
+    load_in_4bit=True,
+)
 
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=16,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        lora_alpha=16,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-    )
+print(f"Model loaded: {model.config._name_or_path}")
+
+# %% CELL 5 — Apply LoRA
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    lora_alpha=16,
+    lora_dropout=0,
+    bias="none",
+    use_gradient_checkpointing="unsloth",
+)
 
 model.print_trainable_parameters()
 
-# Suppress HuggingFace max_length vs max_new_tokens warning permanently
-if hasattr(model, "generation_config"):
-    model.generation_config.max_length = None
-
 # %% CELL 6 — Prompt builder
 ACTION_NAMES = {
-    0: "Physical Strike",
-    1: "CE Blast",
-    2: "Technique Strike",
-    3: "Domain Expansion",
-    4: "Reversed Cursed Technique",
+    0: "Adapt PHYSICAL",
+    1: "Adapt CE",
+    2: "Adapt TECHNIQUE",
+    3: "Judgment Strike",
+    4: "Regeneration",
     None: "(Wasted Turn)"
 }
 
-SYSTEM_MSG = "You are a combat AI fighting an adaptive boss. Respond with ONLY a single integer 0-4."
-
 def build_prompt(state):
-    """Build instruction prompt for the player (sorcerer) fighting Mahoraga."""
-    boss_res = state.get("boss_resistances", {"PHYSICAL": 0, "CE": 0, "TECHNIQUE": 0})
+    """Build instruction prompt from environment state.
+    Includes attack history for pattern detection and weakest resistance for adaptive play."""
+    res = state["resistances"]
     history = state.get("attack_history", [])
-    crit_stack = state.get("crit_stack", 0)
-    domain_used = state.get("domain_used", False)
-    domain_active = state.get("domain_active", False)
-    heal_cd = state.get("heal_cooldown", 0)
-    wheel_turns = state.get("boss_wheel_turns", 0)
 
-    history_str = " → ".join(history) if len(history) >= 2 else "Not enough data yet"
+    # Build attack history string
+    if len(history) >= 2:
+        history_str = " → ".join(history)
+    else:
+        history_str = "Not enough data yet"
 
-    highest_key = max(boss_res, key=boss_res.get)
-    highest_val = boss_res[highest_key]
+    # Detect if pattern exists (check for repeating cycle)
+    pattern_hint = ""
+    if len(history) >= 3:
+        # Check if last 3 attacks form a cycle that predicts next
+        if history[-3:] == ["PHYSICAL", "CE", "TECHNIQUE"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles PHYSICAL → CE → TECHNIQUE. Next attack is likely PHYSICAL."
+        elif history[-3:] == ["CE", "TECHNIQUE", "PHYSICAL"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles CE → TECHNIQUE → PHYSICAL. Next attack is likely CE."
+        elif history[-3:] == ["TECHNIQUE", "PHYSICAL", "CE"]:
+            pattern_hint = "\n⚡ PATTERN DETECTED: Enemy cycles TECHNIQUE → PHYSICAL → CE. Next attack is likely TECHNIQUE."
+        elif history[-1] == history[-2] == history[-3]:
+            pattern_hint = f"\n⚡ PATTERN DETECTED: Enemy repeats {history[-1]} every turn. Adapt to {history[-1]}."
 
-    domain_str = "ACTIVE (+75% DMG)" if domain_active else ("USED" if domain_used else "AVAILABLE")
-    heal_str = f"COOLDOWN ({heal_cd} turns)" if heal_cd > 0 else "READY"
+    # Find weakest resistance
+    weakest_key = min(res, key=res.get)
+    weakest_name = weakest_key.upper()
+    weakest_val = res[weakest_key]
 
-    prompt = f"""You are a sorcerer fighting Mahoraga, an adaptive boss that passively gains resistance to attack types you repeat.
+    prompt = f"""You are Mahoraga, an adaptive combat agent in a turn-based RL environment.
 
 Current State:
-- Your HP: {state.get('player_hp', state.get('agent_hp', 0))}
-- Mahoraga HP: {state.get('boss_hp', state.get('enemy_hp', 0))}
-- Mahoraga Resistances: Physical={boss_res['PHYSICAL']}%, CE={boss_res['CE']}%, Technique={boss_res['TECHNIQUE']}%
-- Mahoraga Wheel Turns: {wheel_turns} (more = stronger boss attacks)
-- Last Boss Attack: {state.get('last_boss_attack', 'None')}
-- Turn: {state['turn_number']}/30
+- Your HP: {state['agent_hp']}
+- Enemy HP: {state['enemy_hp']}
+- Resistances: Physical={res['physical']}, CE={res['ce']}, Technique={res['technique']}
+- Last Enemy Attack: {state['last_enemy_attack_type']}
+- Last Action Taken: {state['last_action']}
+- Turn: {state['turn_number']}
 
-Your Status:
-- Crit Stack: {crit_stack}/3 (3 = next same-type hit does 1.5x)
-- Domain Expansion: {domain_str}
-- Heal: {heal_str}
+Enemy Attack History (oldest → newest):
+  {history_str}{pattern_hint}
 
-Your Attack History: {history_str}
-
-⚠️ Mahoraga's Highest Resistance: {highest_key} ({highest_val}%) — AVOID this type!
+⚠️ Weakest Resistance: {weakest_name} ({weakest_val})
+  → Adaptive enemies will likely target this.
 
 Available Actions:
-0 = Physical Strike (130 base dmg, reduced by boss Physical resistance)
-1 = CE Blast (150 base dmg, 15% chance for BLACK FLASH = 2.5x dmg!)
-2 = Technique Strike (190 base dmg, highest risk/reward)
-3 = Domain Expansion (ONCE per fight: resets boss resistances, +75% dmg for 3 turns)
-4 = Reversed Cursed Technique (heal 250 HP, 4-turn cooldown)
+0 = Adapt Physical Resistance (+40 Physical, -20 others)
+1 = Adapt CE Resistance (+40 CE, -20 others)
+2 = Adapt Technique Resistance (+40 Technique, -20 others)
+3 = Judgment Strike (burst if you adapted to enemy's type, resets resistances)
+4 = Regeneration (heal 300 HP, 3-turn cooldown)
 
 STRATEGY GUIDE:
-1. VARY your attacks — if you spam one type, Mahoraga adapts and becomes resistant
-2. Use CE attacks for chance of Black Flash (2.5x damage!)
-3. Save Domain Expansion for when Mahoraga has high resistances
-4. Kill Mahoraga FAST — the longer the fight, the stronger it gets
-5. Heal ONLY when HP is critically low
+1. If you detect a PATTERN in enemy attacks → predict next attack and adapt to it
+2. If no pattern is clear → adapt to your WEAKEST resistance (enemies target it)
+3. After adapting 2+ times → use Judgment Strike for burst damage
+4. Cycle: Adapt → Adapt → Strike
+5. Heal ONLY when HP is critically low (<300)
 
 Choose the best action. Return ONLY a single integer (0-4)."""
 
@@ -222,14 +167,18 @@ def parse_action(text):
         return int(match.group())
     return 0
 
-# %% CELL 8 — Rollout (silent by default)
-def run_episode(model, tokenizer, env, max_turns=30):
-    """Run one episode. Returns trajectory, total_reward, stats dict."""
+assert parse_action("3") == 3
+assert parse_action("Action: 2") == 2
+print("Parser tests passed.")
+
+# %% CELL 8 — Rollout loop
+def run_episode(model, tokenizer, env, max_turns=25, verbose=True):
+    """Run one full episode, collecting trajectory data."""
     state = env.reset()
     trajectory = []
     total_reward = 0.0
-    bf_count = 0
-    domain_used = False
+    correct_count = 0
+    attack_count = 0
     total_steps = 0
 
     FastLanguageModel.for_inference(model)
@@ -238,7 +187,7 @@ def run_episode(model, tokenizer, env, max_turns=30):
         prompt = build_prompt(state)
 
         messages = [
-            {"role": "system", "content": SYSTEM_MSG},
+            {"role": "system", "content": "You are a combat AI. Respond with ONLY a single integer 0-4."},
             {"role": "user", "content": prompt}
         ]
 
@@ -246,12 +195,9 @@ def run_episode(model, tokenizer, env, max_turns=30):
         inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
 
         with torch.no_grad():
-            import transformers
-            transformers.logging.set_verbosity_error()
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=8,
-                max_length=None,
                 temperature=0.7,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id
@@ -263,10 +209,10 @@ def run_episode(model, tokenizer, env, max_turns=30):
         next_state, reward, done, info = env.step(action)
         total_steps += 1
 
-        if info.get("black_flash", False):
-            bf_count += 1
-        if info.get("domain_activated", False):
-            domain_used = True
+        if info.get("correct_adaptation", False):
+            correct_count += 1
+        if action == 3:
+            attack_count += 1
 
         trajectory.append({
             "prompt": prompt,
@@ -278,98 +224,163 @@ def run_episode(model, tokenizer, env, max_turns=30):
         })
 
         total_reward += reward
+
+        if verbose:
+            print(f"Turn {turn+1}: action={action} ({ACTION_NAMES.get(action, '?')}), "
+                  f"reward={reward:.2f}, "
+                  f"HP={next_state['agent_hp']}/{next_state['enemy_hp']}, "
+                  f"adapt={'✓' if info.get('correct_adaptation') else '✗'}")
+
         state = next_state
         if done:
             break
 
-    won = state.get("boss_hp", state.get("enemy_hp", 1)) <= 0
+    adapt_rate = correct_count / total_steps if total_steps > 0 else 0.0
+    attack_rate = attack_count / total_steps if total_steps > 0 else 0.0
+    won = state["agent_hp"] > state["enemy_hp"]
+
+    if verbose:
+        reason = info.get("reason", "Unknown")
+        print(f"\nEpisode done: {reason} | Total reward: {total_reward:.2f} | "
+              f"Turns: {total_steps} | Adapt: {adapt_rate:.1%} | "
+              f"Attacks: {attack_count} | Won: {won}")
 
     return trajectory, total_reward, {
         "steps": total_steps,
-        "black_flash_count": bf_count,
-        "domain_used": domain_used,
+        "adapt_rate": adapt_rate,
+        "attack_rate": attack_rate,
+        "attacks": attack_count,
         "won": won
     }
 
-# %% CELL 9 — Expert trajectory seeding (difficulty = opponent behavior)
 
-def _pick_expert_action(difficulty, turn, state, cycle_idx, domain_used, env):
-    """Pick opponent action based on difficulty.
-    easy=repeat, medium=cycle, hard=random."""
-    player_hp = state.get("player_hp", state.get("agent_hp", 0))
+# Run one test episode
+env_rollout = MahoragaEnv()
+trajectory, total_reward, ep_stats = run_episode(model, tokenizer, env_rollout)
+print(f"\nCollected {len(trajectory)} steps, total reward: {total_reward:.2f}")
 
-    if player_hp < 350 and env.heal_cooldown_counter == 0:
-        return 4, cycle_idx, domain_used
+# %% CELL 9 — Expert trajectory seeding (multi-enemy)
+from env.enemy import DifficultyEnemy
 
-    if not domain_used and turn >= 8 and difficulty != "easy":
-        boss_res = state.get("boss_resistances", {})
-        if sum(1 for v in boss_res.values() if v >= 30) >= 1:
-            return 3, cycle_idx, True
+def generate_expert_trajectories(num_per_type=4):
+    """Generate optimal trajectories against each enemy type.
+    Curriculum: adapt to phase patterns
+    Easy: always adapt PHYSICAL
+    Medium/Hard: adapt to last enemy attack (reactive strategy)"""
+    expert_trajs = []
+    TYPE_MAP = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}
+    TYPE_MAP_LOWER = {"physical": 0, "ce": 1, "technique": 2}
 
-    if difficulty == "easy":
-        action = 0 if random.random() > 0.05 else random.choice([0, 1, 2])
-        return action, cycle_idx, domain_used
-    elif difficulty == "medium":
-        if random.random() < 0.15:
-            action = random.choice([0, 1, 2])
-        else:
-            action = [0, 1, 2][cycle_idx % 3]
-            cycle_idx += 1
-        return action, cycle_idx, domain_used
-    else:
-        if random.random() < 0.85:
-            action = random.choice([0, 1, 2])
-        else:
-            boss_res = state.get("boss_resistances", {"PHYSICAL": 0, "CE": 0, "TECHNIQUE": 0})
-            weakest = min(boss_res, key=boss_res.get)
-            action = {"PHYSICAL": 0, "CE": 1, "TECHNIQUE": 2}[weakest]
-        return action, cycle_idx, domain_used
+    enemy_configs = [
+        ("curriculum", None),
+        ("easy", DifficultyEnemy("easy")),
+        ("medium", DifficultyEnemy("medium")),
+        ("hard", DifficultyEnemy("hard")),
+    ]
+
+    for enemy_name, enemy_obj in enemy_configs:
+        for _ in range(num_per_type):
+            env = MahoragaEnv(enemy=enemy_obj) if enemy_obj else MahoragaEnv()
+            state = env.reset()
+            traj = []
+            total_reward = 0.0
+            attack_count = 0
+            cycle = 0
+
+            for turn in range(25):
+                if cycle < 2:
+                    if enemy_name == "curriculum":
+                        # Phase-aware adaptation
+                        if turn < 5:
+                            action = 0
+                        elif turn < 15:
+                            phase2_cycle = ["PHYSICAL", "CE", "TECHNIQUE"]
+                            predicted = phase2_cycle[(turn - 5) % 3]
+                            action = TYPE_MAP[predicted]
+                        else:
+                            res = state["resistances"]
+                            weakest = min(res, key=res.get)
+                            action = TYPE_MAP_LOWER[weakest]
+                    elif enemy_name == "easy":
+                        action = 0  # Always PHYSICAL
+                    else:
+                        # Medium/Hard: adapt to last enemy attack (reactive)
+                        last_atk = state.get("last_enemy_attack_type", "PHYSICAL")
+                        action = TYPE_MAP.get(last_atk, 0)
+                    cycle += 1
+                else:
+                    action = 3  # Judgment Strike
+                    attack_count += 1
+                    cycle = 0
+
+                # Emergency heal
+                if state["agent_hp"] < 300 and env.heal_cooldown_counter == 0 and cycle != 0:
+                    action = 4
+                    cycle = 0
+
+                prompt = build_prompt(state)
+                next_state, reward, done, info = env.step(action)
+
+                traj.append({
+                    "prompt": prompt,
+                    "response": str(action),
+                    "action": action,
+                    "reward": reward,
+                    "state": state,
+                    "info": info
+                })
+
+                total_reward += reward
+                state = next_state
+                if done:
+                    break
+
+            won = state["agent_hp"] > state["enemy_hp"]
+            expert_trajs.append((traj, total_reward, won, enemy_name))
+
+    wins = sum(1 for _, _, w, _ in expert_trajs)
+    total = len(expert_trajs)
+    avg_r = sum(r for _, r, _, _ in expert_trajs) / total
+    for ename in ["curriculum", "easy", "medium", "hard"]:
+        w = sum(1 for _, _, won, n in expert_trajs if n == ename and won)
+        print(f"  Expert [{ename:10s}]: {w}/{num_per_type} wins")
+    print(f"  Total: {wins}/{total} wins, avg reward={avg_r:.2f}")
+    return [t for t, _, _, _ in expert_trajs]
 
 
-def generate_expert_trajectories(difficulty, num=4):
-    """Generate expert trajectories for a specific difficulty."""
-    trajs = []
-    for _ in range(num):
-        env = MahoragaEnv(difficulty=difficulty)
-        state = env.reset()
-        traj = []
-        total_reward = 0.0
-        cycle_idx = 0
-        domain_used = False
+expert_trajs = generate_expert_trajectories(4)
 
-        for turn in range(30):
-            action, cycle_idx, domain_used = _pick_expert_action(
-                difficulty, turn, state, cycle_idx, domain_used, env
-            )
-            prompt = build_prompt(state)
-            next_state, reward, done, info = env.step(action)
-            traj.append({
-                "prompt": prompt, "response": str(action),
-                "action": action, "reward": reward,
-                "state": state, "info": info
-            })
-            total_reward += reward
-            state = next_state
-            if done:
-                break
-
-        trajs.append(traj)
-    return trajs
-
-# %% CELL 10 — Dataset builder
+# %% CELL 10 — Episode-aware dataset builder
 from datasets import Dataset
 
-def prepare_weighted_dataset(trajectories, tokenizer, expert_trajs=None):
-    """Create reward-weighted SFT dataset."""
-    records = []
+def prepare_weighted_dataset(all_trajectories, tokenizer, expert_trajectories=None):
+    """Create reward-weighted SFT dataset with episode-level awareness.
 
-    for traj in trajectories:
+    KEY CHANGES from v1:
+    1. Episode outcome modifier: winning episodes get 2x weight
+    2. Action diversity cap: max 60% adaptation samples
+    3. Expert trajectory injection
+    4. Attack actions get bonus weight
+    """
+    records = []
+    stats = {"adapt": 0, "attack": 0, "heal": 0, "expert": 0, "filtered": 0}
+
+    # --- Process model trajectories ---
+    for traj in all_trajectories:
+        # Determine episode outcome
+        last_info = traj[-1]["info"]
         last_state = traj[-1]["state"]
-        episode_won = last_state.get("boss_hp", last_state.get("enemy_hp", 1)) <= 0
-        mult = 2.0 if episode_won else 0.5
+        episode_won = last_state.get("agent_hp", 0) > 0 and last_info.get("reason") == "Enemy defeated"
+
+        # Episode outcome modifier: 2x for wins, 0.5x for losses
+        outcome_mult = 2.0 if episode_won else 0.5
 
         for step in traj:
-            adjusted_r = step["reward"] * mult
+            r = step["reward"]
+            action = step["action"]
+            adjusted_r = r * outcome_mult
+
+            # Base copies from adjusted reward
             if adjusted_r > 2.0:
                 copies = 3
             elif adjusted_r > 0.5:
@@ -377,341 +388,327 @@ def prepare_weighted_dataset(trajectories, tokenizer, expert_trajs=None):
             elif adjusted_r > -2.0:
                 copies = 1
             else:
+                copies = 0
+                stats["filtered"] += 1
                 continue
 
-            if step["action"] == 3 and step["reward"] > 0:
+            # BONUS: attack actions (Judgment) get +1 copy if reward > 0
+            if action == 3 and r > 0:
                 copies += 1
+                stats["attack"] += 1
+            elif action in [0, 1, 2]:
+                stats["adapt"] += 1
+            elif action == 4:
+                stats["heal"] += 1
 
             text = tokenizer.apply_chat_template(
-                [{"role": "system", "content": SYSTEM_MSG},
-                 {"role": "user", "content": step["prompt"]},
-                 {"role": "assistant", "content": step["response"]}],
+                [
+                    {"role": "system", "content": "You are a combat AI. Respond with ONLY a single integer 0-4."},
+                    {"role": "user", "content": step["prompt"]},
+                    {"role": "assistant", "content": step["response"]}
+                ],
                 tokenize=False
             )
-            for _ in range(copies):
-                records.append({"text": text, "action": step["action"]})
 
-    if expert_trajs:
-        for traj in expert_trajs:
+            for _ in range(copies):
+                records.append({"text": text, "action": action})
+
+    # --- Inject expert trajectories ---
+    if expert_trajectories:
+        for traj in expert_trajectories:
             for step in traj:
                 text = tokenizer.apply_chat_template(
-                    [{"role": "system", "content": SYSTEM_MSG},
-                     {"role": "user", "content": step["prompt"]},
-                     {"role": "assistant", "content": step["response"]}],
+                    [
+                        {"role": "system", "content": "You are a combat AI. Respond with ONLY a single integer 0-4."},
+                        {"role": "user", "content": step["prompt"]},
+                        {"role": "assistant", "content": step["response"]}
+                    ],
                     tokenize=False
                 )
+                # Expert samples get 2 copies each
                 for _ in range(2):
                     records.append({"text": text, "action": step["action"]})
+                    stats["expert"] += 1
 
-    # Balance: cap any single action type at 60%
-    from collections import Counter
-    action_counts = Counter(r["action"] for r in records)
-    max_per_action = int(len(records) * 0.6)
-    for action_id, count in action_counts.items():
-        if count > max_per_action:
-            action_records = [r for r in records if r["action"] == action_id]
-            other_records = [r for r in records if r["action"] != action_id]
-            random.shuffle(action_records)
-            records = other_records + action_records[:max_per_action]
+    # --- Enforce action diversity cap ---
+    # If adaptation samples > 60% of total, subsample them
+    adapt_records = [r for r in records if r["action"] in [0, 1, 2]]
+    other_records = [r for r in records if r["action"] not in [0, 1, 2]]
 
-    final = [{"text": r["text"]} for r in records]
-    random.shuffle(final)
-    return Dataset.from_list(final) if final else None
+    max_adapt = int(len(records) * 0.6)
+    if len(adapt_records) > max_adapt:
+        import random
+        random.shuffle(adapt_records)
+        adapt_records = adapt_records[:max_adapt]
 
+    final_records = [{"text": r["text"]} for r in adapt_records + other_records]
+    import random
+    random.shuffle(final_records)
 
-# %% CELL 11 — Checkpoint & curriculum helpers
+    print(f"  Dataset stats: adapt={stats['adapt']}, attack={stats['attack']}, "
+          f"heal={stats['heal']}, expert={stats['expert']}, filtered={stats['filtered']}")
+    print(f"  Final: {len(final_records)} samples "
+          f"(adapt capped at 60%: {len(adapt_records)}/{len(adapt_records)+len(other_records)})")
 
-def save_checkpoint(model, tokenizer, name, stats=None):
-    """Save model + stats to Drive."""
-    path = os.path.join(CHECKPOINT_DIR, name)
-    os.makedirs(path, exist_ok=True)
-    model.save_pretrained(path)
-    tokenizer.save_pretrained(path)
-    if stats:
-        with open(os.path.join(path, "stats.json"), "w") as f:
-            json.dump(stats, f, indent=2)
+    return Dataset.from_list(final_records) if final_records else None
 
-
-def save_curriculum_state(state):
-    """Persist curriculum progress to Drive."""
-    with open(CURRICULUM_PATH, "w") as f:
-        json.dump(state, f, indent=2)
-
-
-def load_curriculum_state():
-    """Load curriculum progress from Drive."""
-    if os.path.exists(CURRICULUM_PATH):
-        with open(CURRICULUM_PATH) as f:
-            return json.load(f)
-    return {"current_difficulty": "easy", "easy_done": False,
-            "medium_done": False, "hard_done": False,
-            "total_iterations": 0, "all_stats": []}
-
-
-def evaluate_model(model, tokenizer, difficulty, num_episodes=10):
-    """Run evaluation episodes. Returns win_rate, avg_reward, stats list."""
-    results = []
-    for _ in range(num_episodes):
-        env = MahoragaEnv(difficulty=difficulty)
-        _, ep_reward, ep_stats = run_episode(model, tokenizer, env)
-        results.append({"reward": ep_reward, "won": ep_stats["won"],
-                         "steps": ep_stats["steps"],
-                         "bf": ep_stats["black_flash_count"],
-                         "domain": ep_stats["domain_used"]})
-    wins = sum(1 for r in results if r["won"])
-    avg_r = sum(r["reward"] for r in results) / len(results)
-    return wins / len(results), avg_r, results
-
-
-# %% CELL 12 — Curriculum Training Loop
-# ═══════════════════════════════════════════════════════════
-#   Easy → (>= 60% win rate) → Medium → (>= 40% win rate) → Hard
-#   Checkpoints every 5 iterations. Milestone saves on promotion.
-#   Auto-resumes from curriculum_state.json.
-# ═══════════════════════════════════════════════════════════
-
-from trl import SFTTrainer, SFTConfig
+# %% CELL 11 — Training loop with checkpoints and metrics
+import json
+import matplotlib.pyplot as plt
 
 FastLanguageModel.for_training(model)
 
-# --- Configuration ---
-EPISODES_PER_ITER = 15           # Episodes per training iteration
-LOG_EVERY = 5                    # Print progress every N iterations
-CHECKPOINT_EVERY = 5             # Save checkpoint every N iterations
-MAX_ITERS_PER_DIFFICULTY = 50    # Safety cap per difficulty
-EVAL_EPISODES = 10               # Episodes for confidence evaluation
+NUM_ITERATIONS = 5
+EPISODES_PER_ITER = 15
 
-# Confidence thresholds (win rate to graduate)
-CONFIDENCE = {"easy": 0.60, "medium": 0.40, "hard": 0.30}
+CHECKPOINT_DIR = os.path.join(DRIVE_DIR, "checkpoints")
+STATS_PATH = os.path.join(DRIVE_DIR, "training_stats.json")
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
-# --- Load curriculum progress ---
-curriculum = load_curriculum_state()
-current_difficulty = curriculum["current_difficulty"]
-total_iters = curriculum["total_iterations"]
-all_stats = curriculum["all_stats"]
+training_stats = []
+reward_history = []
 
-print(f"\n{'='*60}")
-print(f"  CURRICULUM TRAINING — Starting at: {current_difficulty.upper()}")
-print(f"  Resuming from iteration {total_iters}")
-print(f"{'='*60}\n")
+for iteration in range(NUM_ITERATIONS):
+    print(f"\n{'='*60}")
+    print(f"  Iteration {iteration+1}/{NUM_ITERATIONS}")
+    print(f"{'='*60}")
 
-for difficulty in ["easy", "medium", "hard"]:
-    if curriculum.get(f"{difficulty}_done", False):
-        print(f"  ✅ {difficulty.upper()} already completed. Skipping.")
-        continue
-    if difficulty != current_difficulty and not curriculum.get(f"{current_difficulty}_done", False):
-        continue
+    # --- Collect FRESH episodes with current model ---
+    all_trajectories = []
+    iter_rewards = []
+    iter_wins = 0
+    iter_steps = []
+    iter_adapt_rates = []
+    iter_attack_counts = []
 
-    current_difficulty = difficulty
-    print(f"\n{'━'*60}")
-    print(f"  🎮 PHASE: {difficulty.upper()}")
-    pattern_name = {"easy": "repeat", "medium": "cycle", "hard": "random"}[difficulty]
-    print(f"  Opponent pattern: {pattern_name}")
-    print(f"  Win rate needed: {CONFIDENCE[difficulty]:.0%}")
-    print(f"{'━'*60}")
-
-    # Generate expert trajectories for this difficulty
-    expert_trajs = generate_expert_trajectories(difficulty, num=6)
-    consecutive_confident = 0
-    
-    # Calculate how many iterations we already did for this difficulty
-    difficulty_iter = sum(1 for s in all_stats if s["difficulty"] == difficulty)
-    remaining_iters = max(1, MAX_ITERS_PER_DIFFICULTY - difficulty_iter)
-
-    for local_iter in range(remaining_iters):
-        total_iters += 1
-        difficulty_iter += 1
-
-        # --- Collect episodes ---
-        trajectories = []
-        iter_rewards = []
-        iter_wins = 0
-        iter_bf = 0
-
-        for ep in range(EPISODES_PER_ITER):
-            env_train = MahoragaEnv(difficulty=difficulty)
-            traj, ep_reward, ep_stats = run_episode(model, tokenizer, env_train)
-            trajectories.append(traj)
-            iter_rewards.append(ep_reward)
-            if ep_stats["won"]:
-                iter_wins += 1
-            iter_bf += ep_stats["black_flash_count"]
-
-        avg_reward = sum(iter_rewards) / len(iter_rewards)
-        win_rate = iter_wins / EPISODES_PER_ITER
-        avg_steps = sum(len(t) for t in trajectories) / len(trajectories)
-
-        stats = {
-            "iter": total_iters, "difficulty": difficulty,
-            "avg_reward": round(avg_reward, 3),
-            "win_rate": round(win_rate, 3),
-            "avg_steps": round(avg_steps, 1),
-            "black_flashes": iter_bf,
-            "min_r": round(min(iter_rewards), 2),
-            "max_r": round(max(iter_rewards), 2),
-        }
-        all_stats.append(stats)
-
-        # --- Log progress ---
-        if difficulty_iter % LOG_EVERY == 0 or difficulty_iter == 1:
-            print(f"  [{difficulty.upper():6s} iter {difficulty_iter:3d}]  "
-                  f"win={win_rate:5.0%}  reward={avg_reward:+6.2f}  "
-                  f"steps={avg_steps:4.1f}  BF={iter_bf}  "
-                  f"range=[{min(iter_rewards):+.1f}, {max(iter_rewards):+.1f}]")
-
-        # --- Build dataset & train ---
-        inject = expert_trajs if win_rate < 0.3 else expert_trajs[:2]
-        train_dataset = prepare_weighted_dataset(trajectories, tokenizer, inject)
-
-        if train_dataset and len(train_dataset) > 0:
-            FastLanguageModel.for_training(model)
-
-            trainer = SFTTrainer(
-                model=model,
-                tokenizer=tokenizer,
-                train_dataset=train_dataset,
-                args=SFTConfig(
-                    output_dir="/tmp/mahoraga_trainer_output",
-                    per_device_train_batch_size=4,
-                    gradient_accumulation_steps=2,
-                    num_train_epochs=1,
-                    learning_rate=2e-5,
-                    warmup_steps=5,
-                    logging_steps=9999,  # Suppress HF trainer logs
-                    fp16=not torch.cuda.is_bf16_supported(),
-                    bf16=torch.cuda.is_bf16_supported(),
-                    max_seq_length=512,
-                    dataset_text_field="text",
-                    save_strategy="no",
-                    report_to="none",
-                ),
-            )
-            trainer.train()
-
-        # --- Periodic checkpoint ---
-        if difficulty_iter % CHECKPOINT_EVERY == 0:
-            save_checkpoint(model, tokenizer, f"iter_{total_iters}", stats)
-
-        # --- Save curriculum progress (crash recovery) ---
-        curriculum["current_difficulty"] = difficulty
-        curriculum["total_iterations"] = total_iters
-        curriculum["all_stats"] = all_stats
-        save_curriculum_state(curriculum)
-
-        # --- Confidence check ---
-        if win_rate >= CONFIDENCE[difficulty]:
-            consecutive_confident += 1
+    for ep in range(EPISODES_PER_ITER):
+        # Mixed enemy training: expose model to diverse attack patterns
+        # 40% curriculum, 20% easy, 20% medium, 20% hard
+        import random
+        enemy_roll = random.random()
+        if enemy_roll < 0.4:
+            env_train = MahoragaEnv()  # CurriculumEnemy (default)
+        elif enemy_roll < 0.6:
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("easy"))
+        elif enemy_roll < 0.8:
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("medium"))
         else:
-            consecutive_confident = 0
+            env_train = MahoragaEnv(enemy=DifficultyEnemy("hard"))
 
-        # Need 3 consecutive confident iterations to graduate
-        if consecutive_confident >= 3:
-            # Run formal evaluation to confirm
-            print(f"\n  🔍 Evaluating {difficulty.upper()} confidence ({EVAL_EPISODES} eps)...")
-            eval_wr, eval_ar, _ = evaluate_model(model, tokenizer, difficulty, EVAL_EPISODES)
-            print(f"     Eval: win_rate={eval_wr:.0%}, avg_reward={eval_ar:+.2f}")
+        traj, ep_reward, ep_stats = run_episode(model, tokenizer, env_train, verbose=False)
+        all_trajectories.append(traj)
+        iter_rewards.append(ep_reward)
+        iter_steps.append(ep_stats["steps"])
+        iter_adapt_rates.append(ep_stats["adapt_rate"])
+        iter_attack_counts.append(ep_stats["attacks"])
+        if ep_stats["won"]:
+            iter_wins += 1
 
-            if eval_wr >= CONFIDENCE[difficulty]:
-                print(f"  🏆 {difficulty.upper()} MASTERED! Saving milestone...")
-                save_checkpoint(model, tokenizer, f"{difficulty}_best", {
-                    "difficulty": difficulty, "win_rate": eval_wr,
-                    "avg_reward": eval_ar, "iterations": difficulty_iter
-                })
-                curriculum[f"{difficulty}_done"] = True
-                save_curriculum_state(curriculum)
-                break
-            else:
-                print(f"     Not confident enough. Continuing training...")
-                consecutive_confident = 0
+    # --- Compute metrics ---
+    avg_reward = sum(iter_rewards) / len(iter_rewards)
+    win_rate = iter_wins / EPISODES_PER_ITER
+    avg_steps = sum(iter_steps) / len(iter_steps)
+    avg_adapt_rate = sum(iter_adapt_rates) / len(iter_adapt_rates)
+    avg_attacks = sum(iter_attack_counts) / len(iter_attack_counts)
 
-    else:
-        # Hit MAX_ITERS — save what we have and move on
-        print(f"  ⚠️ {difficulty.upper()}: Max iterations reached. Saving and moving on...")
-        save_checkpoint(model, tokenizer, f"{difficulty}_best", stats)
-        curriculum[f"{difficulty}_done"] = True
-        save_curriculum_state(curriculum)
+    stats = {
+        "iteration": iteration + 1,
+        "avg_reward": round(avg_reward, 4),
+        "win_rate": round(win_rate, 4),
+        "avg_steps": round(avg_steps, 2),
+        "adapt_rate": round(avg_adapt_rate, 4),
+        "avg_attacks": round(avg_attacks, 2),
+        "min_reward": round(min(iter_rewards), 4),
+        "max_reward": round(max(iter_rewards), 4)
+    }
+    training_stats.append(stats)
+    reward_history.append(avg_reward)
+
+    print(f"  Avg reward: {avg_reward:.2f} (min={min(iter_rewards):.2f}, max={max(iter_rewards):.2f})")
+    print(f"  Win rate:   {win_rate:.0%}")
+    print(f"  Avg steps:  {avg_steps:.1f}")
+    print(f"  Adapt rate: {avg_adapt_rate:.1%}")
+    print(f"  Avg attacks:{avg_attacks:.1f}")
+
+    # --- Build dataset with episode-level weighting + expert seeding ---
+    # Reduce expert injection after model starts winning
+    expert_inject = expert_trajs if win_rate < 0.3 else expert_trajs[:3]
+    train_dataset = prepare_weighted_dataset(all_trajectories, tokenizer, expert_inject)
+
+    if train_dataset is None or len(train_dataset) == 0:
+        print("  No usable samples — skipping training this iteration.")
+        continue
+
+    print(f"  Training samples: {len(train_dataset)}")
+
+    # --- Train ---
+    FastLanguageModel.for_training(model)
+
+    iter_checkpoint_dir = os.path.join(CHECKPOINT_DIR, f"iteration_{iteration+1}")
+    os.makedirs(iter_checkpoint_dir, exist_ok=True)
+
+    from trl import SFTTrainer, SFTConfig
+
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=train_dataset,
+        args=SFTConfig(
+            output_dir=iter_checkpoint_dir,
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=2,
+            num_train_epochs=1,
+            learning_rate=2e-5,
+            warmup_steps=5,
+            logging_steps=1,
+            fp16=not torch.cuda.is_bf16_supported(),
+            bf16=torch.cuda.is_bf16_supported(),
+            max_seq_length=512,
+            dataset_text_field="text",
+            save_strategy="no",
+        ),
+    )
+
+    trainer.train()
+    print(f"  Training complete for iteration {iteration+1}")
+
+    # --- Save checkpoint ---
+    model.save_pretrained(iter_checkpoint_dir)
+    tokenizer.save_pretrained(iter_checkpoint_dir)
+    print(f"  Checkpoint saved: {iter_checkpoint_dir}")
+
+    # --- Save metrics ---
+    with open(STATS_PATH, "w") as f:
+        json.dump(training_stats, f, indent=2)
 
 print(f"\n{'='*60}")
-print(f"  ✅ CURRICULUM COMPLETE — {total_iters} total iterations")
+print("  Training Complete")
+print(f"  Reward history: {[f'{r:.2f}' for r in reward_history]}")
 print(f"{'='*60}")
 
-# %% CELL 13 — Save final model
-save_path = os.path.join(DRIVE_DIR, "mahoraga_lora_final")
-model.save_pretrained(save_path)
-tokenizer.save_pretrained(save_path)
-
-with open(STATS_PATH, "w") as f:
-    json.dump(all_stats, f, indent=2)
-
-print(f"Final model saved: {save_path}")
-
-# %% CELL 14 — Plot training progress
-import matplotlib.pyplot as plt
-
+# %% CELL 12 — Plot training progress
 def plot_training_progress(stats):
-    """Plot reward and win rate across curriculum phases."""
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    """Plot reward, win rate, adaptation, and attack rate."""
+    iterations = [s["iteration"] for s in stats]
+    avg_rewards = [s["avg_reward"] for s in stats]
+    win_rates = [s["win_rate"] for s in stats]
+    adapt_rates = [s["adapt_rate"] for s in stats]
+    avg_attacks = [s["avg_attacks"] for s in stats]
 
-    colors = {"easy": "#81C784", "medium": "#FFB74D", "hard": "#E57373"}
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-    for diff in ["easy", "medium", "hard"]:
-        phase = [s for s in stats if s["difficulty"] == diff]
-        if not phase:
-            continue
-        iters = [s["iter"] for s in phase]
-        rewards = [s["avg_reward"] for s in phase]
-        wrs = [s["win_rate"] for s in phase]
+    axes[0][0].plot(iterations, avg_rewards, 'o-', color='#4FC3F7', linewidth=2, markersize=8)
+    axes[0][0].set_xlabel("Iteration")
+    axes[0][0].set_ylabel("Avg Reward")
+    axes[0][0].set_title("Average Reward per Iteration")
+    axes[0][0].grid(True, alpha=0.3)
+    axes[0][0].axhline(y=0, color='red', linestyle='--', alpha=0.5)
 
-        axes[0].plot(iters, rewards, 'o-', color=colors[diff], label=diff.upper(), markersize=4)
-        axes[1].plot(iters, wrs, 's-', color=colors[diff], label=diff.upper(), markersize=4)
+    axes[0][1].plot(iterations, win_rates, 's-', color='#81C784', linewidth=2, markersize=8)
+    axes[0][1].set_xlabel("Iteration")
+    axes[0][1].set_ylabel("Win Rate")
+    axes[0][1].set_title("Win Rate per Iteration")
+    axes[0][1].set_ylim(-0.05, 1.05)
+    axes[0][1].grid(True, alpha=0.3)
 
-    axes[0].set_xlabel("Iteration")
-    axes[0].set_ylabel("Avg Reward")
-    axes[0].set_title("Reward Curve (by Difficulty Phase)")
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
-    axes[0].axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+    axes[1][0].plot(iterations, adapt_rates, 'D-', color='#FFB74D', linewidth=2, markersize=8)
+    axes[1][0].set_xlabel("Iteration")
+    axes[1][0].set_ylabel("Adaptation Rate")
+    axes[1][0].set_title("Correct Adaptation Rate")
+    axes[1][0].set_ylim(-0.05, 1.05)
+    axes[1][0].grid(True, alpha=0.3)
 
-    axes[1].set_xlabel("Iteration")
-    axes[1].set_ylabel("Win Rate")
-    axes[1].set_title("Win Rate (by Difficulty Phase)")
-    axes[1].legend()
-    axes[1].set_ylim(-0.05, 1.05)
-    axes[1].grid(True, alpha=0.3)
-
-    # Draw confidence thresholds
-    for diff, thresh in CONFIDENCE.items():
-        axes[1].axhline(y=thresh, color=colors[diff], linestyle=':', alpha=0.5)
+    axes[1][1].plot(iterations, avg_attacks, '^-', color='#E57373', linewidth=2, markersize=8)
+    axes[1][1].set_xlabel("Iteration")
+    axes[1][1].set_ylabel("Avg Attacks/Episode")
+    axes[1][1].set_title("Judgment Strikes per Episode")
+    axes[1][1].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plot_path = os.path.join(DRIVE_DIR, "training_progress.png")
     plt.savefig(plot_path, dpi=150, bbox_inches="tight")
     plt.show()
-    print(f"Plot saved: {plot_path}")
+    print(f"Plot saved to {plot_path}")
 
-plot_training_progress(all_stats)
 
-# %% CELL 15 — Final evaluation across all difficulties
-print("\n--- FINAL EVALUATION ---")
+plot_training_progress(training_stats)
+
+# %% CELL 13 — Save final model and evaluate
+save_path = os.path.join(DRIVE_DIR, "mahoraga_lora_final")
+
+model.save_pretrained(save_path)
+tokenizer.save_pretrained(save_path)
+print(f"Final LoRA weights saved to: {save_path}")
+
+# Final evaluation
+print("\n--- Final Evaluation (10 episodes) ---")
+final_rewards = []
+final_wins = 0
+for ep in range(10):
+    env_eval = MahoragaEnv()
+    _, ep_reward, ep_stats = run_episode(model, tokenizer, env_eval, verbose=False)
+    final_rewards.append(ep_reward)
+    if ep_stats["won"]:
+        final_wins += 1
+    print(f"  Episode {ep+1}: reward={ep_reward:.2f}, "
+          f"won={ep_stats['won']}, adapt={ep_stats['adapt_rate']:.1%}, "
+          f"attacks={ep_stats['attacks']}")
+
+print(f"\nFinal avg reward: {sum(final_rewards)/len(final_rewards):.2f}")
+print(f"Final win rate: {final_wins/10:.0%}")
+
+import shutil
+shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_results"), "zip", DRIVE_DIR, "checkpoints")
+print(f"Results packaged: {DRIVE_DIR}/mahoraga_results.zip")
+
+# %% CELL 14 — Difficulty-based evaluation
+from env.enemy import DifficultyEnemy
+
+print("\n--- Difficulty Evaluation ---")
 for difficulty in ["easy", "medium", "hard"]:
-    wr, ar, results = evaluate_model(model, tokenizer, difficulty, 10)
-    bf_total = sum(r["bf"] for r in results)
-    domain_total = sum(1 for r in results if r["domain"])
-    print(f"  {difficulty.upper():8s}: win={wr:5.0%}  reward={ar:+6.2f}  "
-          f"BF={bf_total}  domains={domain_total}/10")
+    wins = 0
+    rewards = []
+    for ep in range(10):
+        enemy = DifficultyEnemy(difficulty=difficulty)
+        env_diff = MahoragaEnv(enemy=enemy)
+        _, ep_reward, ep_stats = run_episode(model, tokenizer, env_diff, verbose=False)
+        rewards.append(ep_reward)
+        if ep_stats["won"]:
+            wins += 1
 
-# %% CELL 16 — Export
+    avg_r = sum(rewards) / len(rewards)
+    print(f"  {difficulty.upper():8s}: win_rate={wins/10:.0%}, avg_reward={avg_r:.2f}")
+
+# %% CELL 15 — Export model for HuggingFace
+# Option A: Push directly to HuggingFace Hub
+HF_REPO_ID = "YOUR_USERNAME/mahoraga-qwen2.5-3b-lora"  # <-- Change this
+PUSH_TO_HUB = False  # Set to True to push
+
+if PUSH_TO_HUB:
+    from huggingface_hub import login
+    login()  # Will prompt for token (or use Colab Secrets)
+
+    model.push_to_hub(HF_REPO_ID, tokenizer=tokenizer, private=True)
+    print(f"✅ Model pushed to: https://huggingface.co/{HF_REPO_ID}")
+else:
+    print("Skipping HuggingFace push (set PUSH_TO_HUB=True to enable)")
+
+# Option B: Save merged model (full weights, not just LoRA adapter)
 merged_path = os.path.join(DRIVE_DIR, "mahoraga_merged_full")
 model.save_pretrained_merged(merged_path, tokenizer, save_method="merged_16bit")
+print(f"Merged 16-bit model saved to: {merged_path}")
 
+# Option C: Package for download
 shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_lora_weights"), "zip",
                     DRIVE_DIR, "mahoraga_lora_final")
+shutil.make_archive(os.path.join(DRIVE_DIR, "mahoraga_full_model"), "zip",
+                    DRIVE_DIR, "mahoraga_merged_full")
 
-print(f"\n📦 All saved to {DRIVE_DIR}:")
-print("  1. mahoraga_lora_final/  — LoRA adapter")
-print("  2. mahoraga_merged_full/ — Full model")
-print("  3. checkpoints/         — All checkpoints + milestones")
-print("  4. training_progress.png")
-print("  5. training_stats.json")
-print("  6. curriculum_state.json")
-print("\n✅ Done. Safe on Drive.")
+print(f"\n📦 Files saved to Google Drive ({DRIVE_DIR}):")
+print("  1. mahoraga_lora_weights.zip  — LoRA adapter only (small)")
+print("  2. mahoraga_full_model.zip    — Full merged model (large)")
+print("  3. mahoraga_results.zip       — All checkpoints")
+print("  4. training_progress.png      — Training plots")
+print("  5. training_stats.json        — Metrics")
+print("\n✅ All saved to Drive. Safe even if Colab disconnects.")
+
