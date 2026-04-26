@@ -1,3 +1,11 @@
+---
+title: Project Mahoraga
+emoji: ⚔️
+colorFrom: red
+colorTo: gray
+sdk: docker
+app_port: 7860
+---
 # ⚔️ Project Mahoraga — Adaptation Engine
 
 An RL-based combat AI that learns to fight like Mahoraga from JJK — observing enemy attack patterns, adapting its resistances in real-time, and executing devastating Judgment Strikes when stacks are built.
