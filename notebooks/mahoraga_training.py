@@ -24,6 +24,8 @@ import subprocess
 subprocess.run(["pip", "install", "-q", "unsloth", "transformers", "accelerate",
                 "peft", "trl", "bitsandbytes", "datasets", "torch", "matplotlib"], check=True)
 
+import unsloth
+
 import logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("transformers.generation").setLevel(logging.ERROR)
