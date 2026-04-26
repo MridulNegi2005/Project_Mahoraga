@@ -128,7 +128,7 @@ class MahoragaBoss:
                 }
 
         if self.total_wheel_turns >= 1:
-            damage = MAHORAGA_ATTACK_ADAPTED + (self.total_wheel_turns * 15)
+            damage = MAHORAGA_ATTACK_ADAPTED + (self.total_wheel_turns * 10)
         else:
             damage = MAHORAGA_ATTACK_BASE
 
@@ -162,15 +162,11 @@ class MahoragaBoss:
             )
 
     def tick_domain(self):
-        """Decrement domain block counters. Returns True if domain just ended."""
-        ended = False
+        """Decrement domain block counters (adaptation + heal blocks)."""
         if self.domain_blocked_turns > 0:
             self.domain_blocked_turns -= 1
-            if self.domain_blocked_turns == 0:
-                ended = True
         if self.heal_blocked_turns > 0:
             self.heal_blocked_turns -= 1
-        return ended
 
     # ──────────────────────────────────────────────
     # Reduce resistance (Black Flash effect)
